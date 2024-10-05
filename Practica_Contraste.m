@@ -5,8 +5,6 @@ clc
 
 a=imread("kodim23.png");
 
-c=a;
-
 b=im2double(a);
 
 % Solicitar al usuario el número de veces que se debe repetir el algoritmo
@@ -49,7 +47,7 @@ for iteracion = 1:Num_iteraciones
 
     % Creamos un arreglo donde se almacenarán los mejores resultados por generación
     Mejor_Aptitud = zeros(1,Num_Generaciones);
-    
+
     % Creamos un arreglo para almacenar el mejor individuo por generación
     Mejor_Individuo = zeros(Num_Generaciones, Num_var);
 
@@ -74,17 +72,18 @@ for iteracion = 1:Num_iteraciones
 
         aptitud= zeros(1,Num_pob);
         % Evaluación de la población en la entropía
-        
+
         for i = 1:Num_pob
-            %sumatoria = 0;
+            sumatoria = 0;
+            c = 1 ./ (1 + exp(-(Poblacion(i,1)) * (b - Poblacion(i,2))));
+            c = mat2gray(c);
             for t = 1:3
-                c(:,:,t) = 255* (1 ./ (1 + exp(-(Poblacion(i,1) .* (b(:,:,t) - Poblacion(i,2))))));
                 sumatoria= sumatoria + (entropy(c(:,:,t)));
             end
-            %aptitud(i) = -sumatoria;
-            aptitud(i)=-entropy(c);
+            aptitud(i) = -sumatoria;
+            %aptitud(i)=-entropy(c);
         end
-        
+
         % Obtener la posición de la población con mejor aptitud (minimización)
         posiciones_menor = find(aptitud == min(aptitud));
         Pos_Mejor = posiciones_menor(1);
@@ -152,6 +151,7 @@ for iteracion = 1:Num_iteraciones
             end
         end
 
+        
         % Sustitución con elitismo extintivo
         % Seleccionamos todos los hijos para la siguiente generación excepto uno
         Poblacion = Hijos;
@@ -161,6 +161,30 @@ for iteracion = 1:Num_iteraciones
         
         % Reemplazamos al individuo seleccionado con el mejor individuo de la generación anterior
         Poblacion(indice_remplazo, :) = Mejor_Individuo(generacion, :);
+        %{
+        % Sustitución con elitismo (no extintivo)
+        % Crear una matriz que combine padres e hijos
+        Todos = [Poblacion; Hijos];
+        Aptitud_Todos = [aptitud, zeros(1, Num_pob)]; % Inicializa aptitud de los hijos
+
+        % Evaluar la aptitud de los hijos
+        for i = 1:Num_pob
+            sumatoria = 0;
+            c = 1 ./ (1 + exp(-(Hijos(i, 1)) * (b - Hijos(i, 2))));
+            c = mat2gray(c);
+            for t = 1:3
+                sumatoria = sumatoria + (entropy(c(:,:,t)));
+            end
+            Aptitud_Todos(Num_pob + i) = -sumatoria; % Almacenar la aptitud de los hijos
+        end
+
+        % Ordenar todos los individuos por aptitud (ascendente)
+        [~, indices] = sort(Aptitud_Todos); % Obtener los índices de mejor a peor
+
+        % Seleccionar los mejores para la nueva población
+        Poblacion = Todos(indices(1:Num_pob), :); % Mantener los mejores individuos
+        %}
+
     end
 
     % Se obtienen las estadísticas de los resultados obtenidos en cada iteración
@@ -190,15 +214,20 @@ disp(['Peor: ', num2str(peor)]);
 disp(['Desviación estándar: ', num2str(desviacion_estandar)]);
 entropia_original=entropy(a);
 
-final=a;
-
-for t = 1:3
-    final(:,:,t) = 255*(1 ./ (1 + exp(-(valores_mejor_x(1) .* (b(:,:,t) - valores_mejor_x(2))))));
-end
+final = 1 ./ (1 + exp(-(valores_mejor_x(1)) * (b - (valores_mejor_x(2)))));
+final = mat2gray(final);
 
 entropia_mejorada=entropy(final);
 disp(['Entropia Original: ', num2str(entropia_original)]);
 disp(['Entropia Mejorada: ', num2str(entropia_mejorada)]);
+
+if(entropia_mejorada>entropia_original)
+    disp('La imagen mejorada tiene mayor entropia que la original');
+elseif (entropia_original>entropia_mejorada)
+    disp('La imagen mejorada tiene menor entropia que la original');
+elseif (entropia_mejorada==entropia_original)
+    disp('Las dos imagenes tienen la misma entropia');
+end
 
 figure(1)
 subplot(1,2,1);
