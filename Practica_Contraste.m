@@ -3,7 +3,7 @@
 
 clc
 
-a=imread("kodim23.png");
+a=imread("bones_hand_two.jpg");
 
 b=im2double(a);
 
