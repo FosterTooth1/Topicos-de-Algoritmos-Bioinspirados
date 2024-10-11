@@ -218,8 +218,8 @@ final = 1 ./ (1 + exp(-(valores_mejor_x(1)) * (b - (valores_mejor_x(2)))));
 final = mat2gray(final);
 
 entropia_mejorada=entropy(final);
-disp(['Entropia Original: ', num2str(entropia_original)]);
-disp(['Entropia Mejorada: ', num2str(entropia_mejorada)]);
+disp(['Entropia Original: ', num2str(entropia_original, '%.30f')]);
+disp(['Entropia Mejorada: ', num2str(entropia_mejorada, '%.30f')]);
 
 if(entropia_mejorada>entropia_original)
     disp('La imagen mejorada tiene mayor entropia que la original');

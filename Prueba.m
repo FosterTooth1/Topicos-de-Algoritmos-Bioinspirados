@@ -2,9 +2,10 @@ clc
 clear
 close all
 
-a=imread("kodim23.png");
+a=imread("bones_hand_two.jpg");
 
 b=im2double(a);
+
 
 alpha=input('Ingrese el valor de Alpha: ');
 delta=input('Ingrese el valor de Delta: ');
@@ -21,7 +22,14 @@ subplot(1,2,2);
 imshow(c);
 title('Imagen Mejorada');
 
-entropia_original=entropy(a);
+entropia_original=entropy(b);
 entropia_mejorada=entropy(c);
-disp(['Entropia Original: ', num2str(entropia_original)]);
-disp(['Entropia Mejorada: ', num2str(entropia_mejorada)]);
+
+d=im2double(c);
+
+desviacion_estandar = std(b(:))
+desviacion_estandara = std(d(:))
+
+disp(['Entropia Original: ', num2str(entropia_original, '%.30f')]);
+disp(['Entropia Mejorada: ', num2str(entropia_mejorada, '%.30f')]);
+
