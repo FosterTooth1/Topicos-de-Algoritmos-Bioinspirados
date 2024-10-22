@@ -1,7 +1,9 @@
-%%Flores Lara Alberto 6BV1
-%Practica 1
+% Flores Lara Alberto 6BV1
+% Practica 1
 
 clc
+clear 
+close all
 
 % Solicitar al usuario el número de veces que se debe repetir el algoritmo
 Num_iteraciones = input('Ingrese el número de veces que se repetirá el algoritmo: ');
@@ -9,13 +11,11 @@ Num_iteraciones = input('Ingrese el número de veces que se repetirá el algorit
 % Solicitar al usuario el número de generaciones en el algoritmo
 Num_Generaciones = input('Ingrese el número de generaciones en el algoritmo: ');
 
-%%Establecemos nuestra poblacion y cantidad de variables con las que vamos a trabajar
+% Establecemos nuestra población y cantidad de variables con las que vamos a trabajar
 Num_pob = input('Ingrese el numero de individuos dentro de la población: ');
 Num_var = input('Ingrese la cantidad de variables que tiene cada individuo: ');
 
-%%Establecemos los limites inferiores y superiores de las variables en un
-%%ciclo for y los guardamos en un arreglo
-
+% Establecemos los límites inferiores y superiores de las variables en un ciclo for y los guardamos en un arreglo
 Limite_Inferior = zeros(1, Num_var);
 for i = 1:Num_var
     valor = input(['Ingrese el limite inferior de la variable ', num2str(i), ': ']);
@@ -24,34 +24,48 @@ end
 
 Limite_Superior = zeros(1, Num_var);
 for i = 1:Num_var
-    % Solicita al usuario que ingrese un valor
     valor = input(['Ingrese el limite superior de la variable ', num2str(i), ': ']);
     Limite_Superior(i) = valor;
 end
 
-%Probabilidad de cruza
-Pc=input('Ingrese la probabilidad de cruza del algoritmo: ');
+% Solicitar al usuario el valor de alfa en el fitness sharing
+alpha_sharing = input('Ingrese el valor de alpha en el fitness sharing: ');
 
-%Probabilidad de mutación
-Pm=input('Ingrese la probabilidad de mutacion del algoritmo: ');
+% Solicitar al usuario la cantidad de picos que quiere considerar en la exploración
+q = input('Ingrese la cantidad de picos para la exploración: ');
 
+% Calcular el radio de nicho utilizando la fórmula proporcionada
+suma_diferencias_cuadradas = 0;
+for k = 1:Num_var
+    suma_diferencias_cuadradas = suma_diferencias_cuadradas + (Limite_Superior(k) - Limite_Inferior(k))^2;
+end
+sigma_share = sqrt(suma_diferencias_cuadradas) / (2 * q^(1/Num_var));
+
+disp(['El radio de nicho calculado es: ', num2str(sigma_share)]);
+
+% Probabilidad de cruza
+Pc = input('Ingrese la probabilidad de cruza del algoritmo: ');
+
+% Probabilidad de mutación
+Pm = input('Ingrese la probabilidad de mutacion del algoritmo: ');
+
+% Inicialización de la población
 Poblacion = zeros(Num_pob, Num_var);
-for i= 1:Num_pob
-    for j= 1:Num_var
-        Poblacion(i,j)= (Limite_Inferior(j)+rand*(Limite_Superior(j) - Limite_Inferior(j)));
+for i = 1:Num_pob
+    for j = 1:Num_var
+        Poblacion(i,j) = (Limite_Inferior(j) + rand * (Limite_Superior(j) - Limite_Inferior(j)));
     end
 end
 
 % Creamos un arreglo donde se almacenarán los mejores resultados por iteración
-Resultados_Generales= zeros(1,Num_iteraciones);
+Resultados_Generales = zeros(1, Num_iteraciones);
 
 % Creamos un arreglo para almacenar los mejores individuos (sus variables) por iteración
 Mejor_Individuo_General = zeros(Num_iteraciones, Num_var);
 
 for iteracion = 1:Num_iteraciones
-
     % Creamos un arreglo donde se almacenarán los mejores resultados por generación
-    Mejor_Aptitud = zeros(1,Num_Generaciones);
+    Mejor_Aptitud = zeros(1, Num_Generaciones);
     
     % Creamos un arreglo para almacenar el mejor individuo por generación
     Mejor_Individuo = zeros(Num_Generaciones, Num_var);
@@ -60,35 +74,64 @@ for iteracion = 1:Num_iteraciones
     for generacion = 1:Num_Generaciones
         if generacion <= Num_Generaciones * 0.5
             Nc = 2;
-            Nm= 20;
+            Nm = 20;
         elseif generacion <= Num_Generaciones * 0.75
             Nc = 5;
-            Nm= 50;
+            Nm = 50;
         elseif generacion <= Num_Generaciones * 0.80
             Nc = 10;
-            Nm= 75;
+            Nm = 75;
         elseif generacion <= Num_Generaciones * 0.95
             Nc = 15;
-            Nm= 85;
+            Nm = 85;
         else
             Nc = 20;
-            Nm= 100;
+            Nm = 100;
         end
 
-        aptitud= zeros(1,Num_pob);
-        % Evaluación de la población en la función de Langermann
-        a = [3,5,2,1,7];
-        b = [5,2,1,4,9];
-        c = [1,2,5,2,3];
+        % Evaluación de la población en la función
+        aptitud = zeros(1, Num_pob);
         
         for i = 1:Num_pob
-            sumatoria = 0;
-            for t = 1:5
-                sumatoria = sumatoria + c(t) * cos(pi * ((Poblacion(i,1) - a(t))^2 + (Poblacion(i,2) - b(t))^2)) / exp(((Poblacion(i,1) - a(t))^2 + (Poblacion(i,2) - b(t))^2) / pi);
-            end
-            aptitud(i) = -sumatoria;
-            
+            x = Poblacion(i, 1);
+            y = Poblacion(i, 2);
+            aptitud(i) = 20 + (x^2 - 10 * cos(2 * pi * x)) + (y^2 - 10 * cos(2 * pi * y));
         end
+        
+        % Calcular la aptitud compartida utilizando Fitness Sharing
+        aptitud_compartida = zeros(1, Num_pob);
+        for i = 1:Num_pob
+            Compartido = 0; % Inicializar la suma de recursos compartidos
+            for j = 1:Num_pob
+                if i ~= j
+                    % Calcular la distancia entre el individuo i y el individuo j
+                    Distancia = norm(Poblacion(i, :) - Poblacion(j, :));
+                    
+                    % Verificar si la distancia es menor que el radio de nicho
+                    if Distancia < sigma_share
+                        % Calcular la porción de recurso compartido usando la función de repartición
+                        sh = 1 - (Distancia / sigma_share)^(alpha_sharing); % alpha = 1
+                        Compartido = Compartido + sh; % Sumar la porción de recurso compartido
+                    end
+                end
+            end
+            % Modificar la aptitud del individuo con el valor de recurso compartido
+            aptitud_compartida(i) = aptitud(i) * (1 + Compartido); % Actualizar la aptitud compartida
+        end
+
+        aptitud=aptitud_compartida;
+
+        % Gráfica de la población en el espacio 2D para la generación actual
+        figure(iteracion); % Crear una nueva figura para cada iteración
+        scatter(Poblacion(:, 1), Poblacion(:, 2), 50, 'filled'); % Graficar la población actual
+        title(['Iteración ', num2str(iteracion), ' - Generación ', num2str(generacion)]);
+        xlabel('Variable X');
+        ylabel('Variable Y');
+        xlim([Limite_Inferior(1), Limite_Superior(1)]);
+        ylim([Limite_Inferior(2), Limite_Superior(2)]);
+        grid on;
+        drawnow; % Actualizar la gráfica en cada generación
+
         
         % Obtener la posición de la población con mejor aptitud (minimización)
         posiciones_menor = find(aptitud == min(aptitud));
@@ -193,3 +236,4 @@ disp(['Valores de las variables (x) para la mejor aptitud: ', num2str(valores_me
 disp(['Media: ', num2str(media)]);
 disp(['Peor: ', num2str(peor)]);
 disp(['Desviación estándar: ', num2str(desviacion_estandar)]);
+
