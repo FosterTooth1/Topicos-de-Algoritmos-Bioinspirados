@@ -1,5 +1,5 @@
 % Flores Lara Alberto 6BV1
-% Practica 2
+% Tarea 2
 
 clc
 clear 
@@ -33,8 +33,6 @@ alpha_sharing = input('Ingrese el valor de alpha en el fitness sharing: ');
 
 % Solicitar al usuario el valor del radio del nicho (sigma_share)
 sigma_share = input('Ingrese el valor del radio de los nichos: ');
-
-disp(['El radio de nicho calculado es: ', num2str(sigma_share)]);
 
 % Probabilidad de cruza
 Pc = input('Ingrese la probabilidad de cruza del algoritmo: ');
@@ -98,7 +96,9 @@ for iteracion = 1:Num_iteraciones
             % Modificar la aptitud del individuo con el valor de recurso compartido
             aptitud_compartida(i) = aptitud(i) * (1 + Compartido); % Actualizar la aptitud compartida
         end
-
+        
+        %Reemplaza la aptitud de los individuos de forma individual por la
+        %del fitness sharing
         aptitud=aptitud_compartida;
         
         % Obtener la posición de la población con mejor aptitud (minimización)
