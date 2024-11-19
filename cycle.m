@@ -16,8 +16,8 @@ Permutacion_ciudades = zeros(Num_iteraciones, size(Distancias, 1));
 
 for iteracion = 1:Num_iteraciones
     
-    Num_pob = 100;
-    Num_Gen = 200;  % Aumentar el número de generaciones
+    Num_pob = 211;
+    Num_Gen = 1500;  % Aumentar el número de generaciones
     Pm = 0.15;  % Aumentar la probabilidad de mutación
     Num_var = size(Distancias, 1);  % Número de ciudades basado en la matriz de distancias
     
@@ -129,24 +129,18 @@ for i = 1:length(mejor_solucion)
 end
 
 function Ciudades_Vecinas = CrearLista(padre1, padre2, noCiudades)
-    % Arreglo de celdas
-    Ciudades_Vecinas = cell(1, noCiudades); 
+    Ciudades_Vecinas = cell(1, noCiudades); % Arreglo de celdas
     for i = 1:noCiudades
         ciudad = padre1(i);
         indx1 = [i-1, i+1];
-        indx1(indx1 == 0) = noCiudades; % Ajustar índices fuera de rango
-        indx1(indx1 > noCiudades) = 1;
-
         indx2 = find(padre2 == ciudad);
-        if isempty(indx2)
-            indx2 = []; % Si no hay coincidencia
-        else
-            indx2 = [indx2-1, indx2+1];
-            indx2(indx2 == 0) = noCiudades; % Ajustar índices fuera de rango
-            indx2(indx2 > noCiudades) = 1;
-        end
+        indx2 = [indx2-1, indx2+1];
 
-        % Ciudades no repetidas
+        indx1(indx1 == 0) = noCiudades;
+        indx1(indx1 > noCiudades) = 1;
+        indx2(indx2 == 0) = noCiudades;
+        indx2(indx2 > noCiudades) = 1;
+
         vecinos = unique([padre1(indx1), padre2(indx2)]);
         Ciudades_Vecinas{ciudad} = vecinos;
     end
@@ -159,46 +153,39 @@ function hijo = CycleCrossover(padre1, padre2, noCiudades)
     ciclo = 0;                             % Contador para el ciclo
 
     while any(~visitado) % Mientras haya alguna ciudad no visitada
-        if mod(ciclo, 2) == 1
-            % Si el ciclo es impar, empezamos con el primer padre
-            pos_inicio = find(~visitado, 1);
-            pos_inicio = padre1(pos_inicio);
-        else
-            % Si el ciclo es par, empezamos con el segundo padre
-            pos_inicio = find(~visitado, 1);
-            pos_inicio = padre2(pos_inicio);
-        end
+        pos_inicio = find(~visitado, 1);   % Primera ciudad no visitada
         ciclo = ciclo + 1;
-
-        % Definir los padres actuales según el ciclo
+        pos_actual = pos_inicio;
+        
+        % Alternar padres según el ciclo
         if mod(ciclo, 2) == 1
-            padre_actual = padre1;        
+            padre_actual = padre1;
             otro_padre = padre2;
         else
-            padre_actual = padre2; 
+            padre_actual = padre2;
             otro_padre = padre1;
         end
 
-        pos_actual = pos_inicio;
         while true
-            hijo(pos_actual) = padre_actual(pos_actual); % Asignar valor del padre actual
-            visitado(pos_actual) = true; % Marcar posición como visitada
+            hijo(pos_actual) = padre_actual(pos_actual); % Asignar valor
+            visitado(pos_actual) = true; % Marcar como visitado
 
-            % Encontramos la siguiente posición en el otro padre
+            % Buscar siguiente posición
             valor_actual = padre_actual(pos_actual);
-            pos_actual = find(otro_padre == valor_actual);
+            pos_actual = find(otro_padre == valor_actual, 1);
 
-            % Romper el bucle si se completa el ciclo
-            if pos_actual == pos_inicio
+            % Validar posición actual
+            if isempty(pos_actual)
+                error('Error: posición actual no encontrada en el otro padre.');
+            end
+
+            % Condición de salida del ciclo
+            if visitado(pos_actual) || pos_actual == pos_inicio
                 break;
             end
         end
     end
-    hijo(hijo == 0) = padre2(hijo == 0);
 end
-
-
-
 
 function costo = Costo(recorrido, Distancias, noCiudades)
     costo = 0;
@@ -216,7 +203,7 @@ function mutado = Mutacion(individuo, noCiudades)
 end
 
 function padres = SeleccionTorneo(Pob, Aptitud_Pob, num_pares)
-    num_competidores = 2;  % Número de competidores en el torneo
+    num_competidores = 2;
     num_pob = size(Pob, 1);
     padres = zeros(num_pares, size(Pob, 2));
     for i = 1:num_pares

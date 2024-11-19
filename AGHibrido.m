@@ -16,7 +16,7 @@ Permutacion_ciudades = zeros(Num_iteraciones, size(Distancias, 1));
 
 for iteracion = 1:Num_iteraciones
     
-    Num_pob = 160;
+    Num_pob = 111;
     Num_Gen = 500;  % Aumentar el número de generaciones
     Pm = 0.2;  % Aumentar la probabilidad de mutación
     Num_var = size(Distancias, 1);  % Número de ciudades basado en la matriz de distancias
@@ -128,25 +128,43 @@ for i = 1:length(mejor_solucion)
     fprintf('%d. %s\n', i, nombre_ciudad);
 end
 
+% Verificación de permutaciones
+fprintf('\n*** Verificación de permutaciones ***\n');
+num_ciudades = size(Distancias, 1); % Número de ciudades esperadas
+es_permutacion = true(1, Num_iteraciones); % Vector de resultados
+
+for i = 1:Num_iteraciones
+    solucion = Permutacion_ciudades(i, :);
+    % Verificar si contiene exactamente los números del 1 al num_ciudades
+    if isequal(sort(solucion), 1:num_ciudades)
+        fprintf('Solución %d es una permutación válida.\n', i);
+    else
+        fprintf('Solución %d NO es una permutación válida.\n', i);
+        es_permutacion(i) = false;
+    end
+end
+
+% Mostrar resultados finales
+if all(es_permutacion)
+    disp('Todas las soluciones generadas son permutaciones válidas.');
+else
+    disp('Al menos una solución generada no es una permutación válida.');
+end
+
+
 function Ciudades_Vecinas = CrearLista(padre1, padre2, noCiudades)
-    % Arreglo de celdas
-    Ciudades_Vecinas = cell(1, noCiudades); 
+    Ciudades_Vecinas = cell(1, noCiudades); % Arreglo de celdas
     for i = 1:noCiudades
         ciudad = padre1(i);
         indx1 = [i-1, i+1];
-        indx1(indx1 == 0) = noCiudades; % Ajustar índices fuera de rango
-        indx1(indx1 > noCiudades) = 1;
-
         indx2 = find(padre2 == ciudad);
-        if isempty(indx2)
-            indx2 = []; % Si no hay coincidencia
-        else
-            indx2 = [indx2-1, indx2+1];
-            indx2(indx2 == 0) = noCiudades; % Ajustar índices fuera de rango
-            indx2(indx2 > noCiudades) = 1;
-        end
+        indx2 = [indx2-1, indx2+1];
 
-        % Ciudades no repetidas
+        indx1(indx1 == 0) = noCiudades;
+        indx1(indx1 > noCiudades) = 1;
+        indx2(indx2 == 0) = noCiudades;
+        indx2(indx2 > noCiudades) = 1;
+
         vecinos = unique([padre1(indx1), padre2(indx2)]);
         Ciudades_Vecinas{ciudad} = vecinos;
     end
@@ -162,10 +180,8 @@ function hijo = EdgeRecombination(padre1, padre2, noCiudades)
 
     for i = 2:noCiudades
         for j = 1:length(Ciudades_Vecinas)
-            indx = Ciudades_Vecinas{j} == city_actual;
-            
-            % Solo eliminar si indx no está vacío
-            if any(indx)
+            if ~isempty(Ciudades_Vecinas{j})
+                indx = Ciudades_Vecinas{j} == city_actual;
                 Ciudades_Vecinas{j}(indx) = [];
             end
         end
@@ -181,8 +197,7 @@ function hijo = EdgeRecombination(padre1, padre2, noCiudades)
             end
 
             [~, Minindx] = min(noConex);
-            idx = randsample(Minindx, 1);  % Elegir uno de los mínimos al azar
-            city_actual = vecinos_actuales(idx);
+            city_actual = vecinos_actuales(Minindx);
         end
         hijo(i) = city_actual;
     end
