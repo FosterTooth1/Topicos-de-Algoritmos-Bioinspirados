@@ -219,7 +219,7 @@
                 costo= vent_inferior;
             end 
             if costo > vent_superior
-                penalizacion = sum((max(costo-vent_superior, 0)).^2);
+                penalizacion = (costo - vent_superior)^2;
                 costo = costo + 1*penalizacion;
             end
         end
@@ -230,7 +230,7 @@
             costo= vent_inferior;
         end 
         if costo > vent_superior
-            penalizacion = sum((max(costo-vent_superior, 0)).^2);
+            penalizacion = (costo - vent_superior)^2;
             costo = costo + 1*penalizacion;
         end
     end
