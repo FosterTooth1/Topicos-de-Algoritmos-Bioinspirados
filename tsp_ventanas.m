@@ -40,7 +40,7 @@
     
     for iteracion = 1:Num_iteraciones
         
-        Num_pob = 211;
+        Num_pob = 260;
         Num_Gen = 1500;  % Aumentar el número de generaciones
         Pm = 0.15;  % Aumentar la probabilidad de mutación
         Num_var = size(Distancias, 1);  % Número de ciudades basado en la matriz de distancias
@@ -112,6 +112,8 @@
         
         % Mostrar resultados finales
         [Mejor_Aptitud_Final, idx] = min(Aptitud_Pob);
+        index_best= find(Mejor_Individuo_Historico==ciudad_inicio);
+        Mejor_Individuo_Historico= rearrangeFromIndex(Mejor_Individuo_Historico, index_best);
         fprintf('Solucion %d : %s, Costo: %d\n', iteracion, mat2str(Mejor_Individuo_Historico), Mejor_Aptitud_Historico);
         
         Resultados_Generales(iteracion) = Mejor_Aptitud_Historico;
@@ -137,7 +139,8 @@
     % Imprimir el orden de ciudades recorridas por la mejor solución encontrada
     [~, idx] = min(Resultados_Generales);
     mejor_solucion = Permutacion_ciudades(idx, :);
-    mejor_solucion= rearrangeFromIndex(mejor_solucion, Pos_inicio);
+    index_best= find(mejor_solucion==ciudad_inicio);
+    mejor_solucion= rearrangeFromIndex(mejor_solucion, index_best);
     
     fprintf('Orden de ciudades recorridas:\n');
     for i = 1:length(mejor_solucion)
@@ -213,8 +216,8 @@
                 error('Índice fuera de los límites al calcular costo. Verifica el recorrido.');
             end
             costo = costo + Distancias(recorrido(i), recorrido(i+1));
-            vent_inferior = Ventana_tiempo(recorrido(i), 1);
-            vent_superior = Ventana_tiempo(recorrido(i), 2);
+            vent_inferior = Ventana_tiempo(recorrido(i+1), 1);
+            vent_superior = Ventana_tiempo(recorrido(i+1), 2);
             if costo < vent_inferior
                 costo= vent_inferior;
             end 
@@ -231,7 +234,7 @@
         end 
         if costo > vent_superior
             penalizacion = (costo - vent_superior)^2;
-            costo = costo + 1*penalizacion;
+            costo = costo + 0.000001*penalizacion;
         end
     end
     
@@ -258,9 +261,6 @@ function rearrangedArray = rearrangeFromIndex(array, startIndex)
     if startIndex < 1 || startIndex > length(array)
         error('El índice debe estar entre 1 y el tamaño del arreglo.');
     end
-    
     % Rearreglar el arreglo desde el índice dado
     rearrangedArray = [array(startIndex:end), array(1:startIndex-1)];
-end
-
-    
+end    
