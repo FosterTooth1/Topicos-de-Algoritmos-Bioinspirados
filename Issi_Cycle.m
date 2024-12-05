@@ -3,61 +3,39 @@ clear, clc, close all;
 % Solicitar al usuario el número de veces que se debe repetir el algoritmo
 Num_iteraciones = input('Ingrese el número de veces que se repetirá el algoritmo: ');
 
-% Solicitar al usuario la ciudad de inicio 
-ciudad_inicio = input('Ingrese el numero de la ciudad de inicio: ');
-
 % Solicitar al usuario el valor de m para la heuristica
 m = input('Ingrese el valor de m para considerar en la heuristica: ');
 
 % Creamos un arreglo donde se almacenaran los individuos con mejor aptitud (minimización) por cada iteración
 Resultados_Generales = zeros(1, Num_iteraciones);
 
-Distancias = [0, 61.82, 18.54, 37.52, 54.08,  1.88, 59.98, 32.82, 69.42, 36.76, 60.26;
-    61.82, 0, 50.84, 33.62,  7.50, 59.88,  2.76, 28.84,  7.78, 28.14,  5.80;
-    18.54, 50.84, 0, 26.74, 43.38, 18.60, 49.28, 22.00, 58.70, 23.36, 49.30;
-    37.52, 33.62, 26.74, 0, 26.16, 35.56, 32.06,  4.80, 41.50,  3.26, 32.08;
-    54.08,  7.50, 43.38, 26.16, 0, 52.06, 57.96, 21.38, 15.34, 20.68,  5.92;
-    1.88, 59.88, 18.60, 35.56, 52.06, 0, 57.96, 30.86, 67.38, 34.80, 58.30;
-    59.98,  2.76, 49.28, 32.06, 57.96, 57.96, 0, 27.28, 10.62, 26.58,  6.76;
-    32.82, 28.84, 22.00,  4.80, 21.38, 30.86, 27.28, 0, 36.72,  4.02, 27.30;
-    69.42,  7.78, 58.70, 41.50, 15.34, 67.38, 10.62, 36.72, 0, 36.02, 12.14;
-    36.76, 28.14, 23.36,  3.26, 20.68, 34.80, 26.58,  4.02, 36.02, 0, 26.60;
-    60.26,  5.80, 49.30, 32.08,  5.92, 58.30,  6.76, 27.30, 12.14, 26.60, 0];
+% Leer el archivo CSV
+data = readmatrix('distancias.csv');
 
-Ventana_tiempo= [ ...
-    -inf, inf;
-    50, 90;
-    15, 25;
-    30, 55;
-    15, 75;
-    5, 35;
-    150, 200;
-    25, 50;
-    65, 100;
-    120, 150;
-    30, 85];
+% Eliminar la primera columna, que contiene los encabezados laterales
+Distancias = data(:, 2:end);
 
 Permutacion_ciudades = zeros(Num_iteraciones, size(Distancias, 1));
 
 for iteracion = 1:Num_iteraciones
 
-    Num_pob = 20;
-    Num_Gen = 25;
+    Num_Pob = 50;
+    Num_Gen = 100;
     Pm = 0.15;
     Num_var = size(Distancias, 1);  % Número de ciudades basado en la matriz de distancias
 
     % Población inicial
-    Pob = zeros(Num_pob, Num_var);
-    for i = 1:Num_pob
+    Pob = zeros(Num_Pob, Num_var);
+    for i = 1:Num_Pob
         Pob(i, :) = randperm(Num_var);
         %Aplicacion de heuristica de remoción de apruptos
-        Pob(i, :) = heuristica_abruptos(Pob(i,:), m, Distancias, Ventana_tiempo, Num_var, ciudad_inicio);
+        Pob(i, :) = heuristica_abruptos(Pob(i,:), m, Distancias, Num_var);
     end
 
     % Evaluación
-    Aptitud_Pob = zeros(Num_pob, 1);
-    for i = 1:Num_pob
-        Aptitud_Pob(i) = Costo(Pob(i, :),ciudad_inicio ,Distancias, Ventana_tiempo , Num_var);
+    Aptitud_Pob = zeros(Num_Pob, 1);
+    for i = 1:Num_Pob
+        Aptitud_Pob(i) = Costo(Pob(i, :), Distancias, Num_var);
     end
 
     % Inicializar mejor histórico
@@ -67,40 +45,41 @@ for iteracion = 1:Num_iteraciones
     iter = 1;
     while iter <= Num_Gen
 
-        % Selección de padres por torneo
-        padres = SeleccionTorneo(Pob, Aptitud_Pob, Num_pob);
+        % Selección de Padres por torneo
+        Padres = SeleccionTorneo(Pob, Aptitud_Pob, Num_Pob);
 
         % Cruzamiento y evaluación
-        Hijos = zeros(Num_pob, Num_var);
-        Aptitud_Hijos = zeros(Num_pob, 1);
+        Hijos = zeros(Num_Pob, Num_var);
+        Aptitud_Hijos = zeros(Num_Pob, 1);
 
-        for i = 1:2:Num_pob
+        for i = 1:2:Num_Pob
             % Generar hijo 1 e hijo 2
-            hijo_1 = CycleCrossover(padres(i, :), padres(i+1, :), Num_var);
-            hijo_2 = CycleCrossover(padres(i+1, :), padres(i, :), Num_var);
+            hijo_1 = CycleCrossover(Padres(i, :), Padres(i+1, :), Num_var);
+            hijo_2 = CycleCrossover(Padres(i+1, :), Padres(i, :), Num_var);
 
             %Aplicacion de heuristica de remoción de abruptos
-            hijo_1 = heuristica_abruptos(hijo_1, m, Distancias, Ventana_tiempo, Num_var, ciudad_inicio);
-            hijo_2 = heuristica_abruptos(hijo_2, m, Distancias, Ventana_tiempo, Num_var, ciudad_inicio);
+            hijo_1 = heuristica_abruptos(hijo_1, m, Distancias, Num_var);
+            hijo_2 = heuristica_abruptos(hijo_2, m, Distancias, Num_var);
 
             % Calcular aptitudes de los hijos
-            Aptitud_Hijo_1 = Costo(hijo_1, ciudad_inicio, Distancias, Ventana_tiempo, Num_var);
-            Aptitud_Hijo_2 = Costo(hijo_2, ciudad_inicio, Distancias, Ventana_tiempo, Num_var);
+            Aptitud_Hijo_1 = Costo(hijo_1, Distancias, Num_var);
+            Aptitud_Hijo_2 = Costo(hijo_2, Distancias, Num_var);
 
-            % Calcular aptitudes de los padres
-            Aptitud_Padre_1 = Costo(padres(i, :), ciudad_inicio, Distancias, Ventana_tiempo, Num_var);
-            Aptitud_Padre_2 = Costo(padres(i+1, :), ciudad_inicio, Distancias, Ventana_tiempo, Num_var);
+            % Calcular aptitudes de los Padres
+            Aptitud_Padre_1 = Costo(Padres(i, :), Distancias, Num_var);
+            Aptitud_Padre_2 = Costo(Padres(i+1, :), Distancias, Num_var);
 
             % Crear una matriz con todos los individuos y sus aptitudes
-            individuos = [padres(i, :); padres(i+1, :); hijo_1; hijo_2];
+            individuos = [Padres(i, :); Padres(i+1, :); hijo_1; hijo_2];
             aptitudes = [Aptitud_Padre_1; Aptitud_Padre_2; Aptitud_Hijo_1; Aptitud_Hijo_2];
 
-            % Ordenar individuos por aptitud (ascendente)
+            % Ordenar individuos por aptitud
             [aptitudes_ordenadas, indices] = sort(aptitudes);
             mejores_individuos = individuos(indices(1:2), :);
             mejores_aptitudes = aptitudes_ordenadas(1:2);
 
-            % Guardar los mejores individuos y sus aptitudes en las matrices
+            % Guardar los mejores individuos y sus aptitudes para la
+            % siguiente generación
             Hijos(i, :) = mejores_individuos(1, :);
             Hijos(i+1, :) = mejores_individuos(2, :);
             Aptitud_Hijos(i) = mejores_aptitudes(1);
@@ -112,10 +91,10 @@ for iteracion = 1:Num_iteraciones
         Aptitud_Pob = Aptitud_Hijos;
 
         % Mutación
-        for i = 1:Num_pob
+        for i = 1:Num_Pob
             if rand <= Pm
                 Pob(i, :) = Mutacion(Pob(i, :), Num_var);
-                Aptitud_Pob(i) = Costo(Pob(i, :),ciudad_inicio ,Distancias, Ventana_tiempo , Num_var);
+                Aptitud_Pob(i) = Costo(Pob(i, :), Distancias, Num_var);
             end
         end
 
@@ -130,9 +109,6 @@ for iteracion = 1:Num_iteraciones
     end
 
     % Mostrar resultados finales
-    [Mejor_Aptitud_Final, ~] = min(Aptitud_Pob);
-    index_best= find(Mejor_Individuo_Historico==ciudad_inicio);
-    Mejor_Individuo_Historico= rearrangeFromIndex(Mejor_Individuo_Historico, index_best);
     fprintf('Solucion %d : %s, Costo: %d\n', iteracion, mat2str(Mejor_Individuo_Historico), Mejor_Aptitud_Historico);
 
     Resultados_Generales(iteracion) = Mejor_Aptitud_Historico;
@@ -151,15 +127,17 @@ disp(['Media: ', num2str(media)]);
 disp(['Peor: ', num2str(peor)]);
 disp(['Desviación estándar: ', num2str(desviacion_estandar)]);
 
-nombres_ciudades = {'New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', ...
-    'Philadelphia', 'San Diego', 'Dallas', 'San Francisco', ...
-    'Austin', 'Las Vegas'};
+nombres_ciudades = {'Aguascalientes', 'Baja California', 'Baja California Sur', ...
+    'Campeche', 'Chiapas', 'Chihuahua', 'Coahuila', 'Colima', 'Durango', ...
+    'Guanajuato', 'Guerrero', 'Hidalgo', 'Jalisco', 'Estado de México', ...
+    'Michoacán', 'Morelos', 'Nayarit', 'Nuevo León', 'Oaxaca', 'Puebla', ...
+    'Querétaro', 'Quintana Roo', 'San Luis Potosí', 'Sinaloa', 'Sonora', ...
+    'Tabasco', 'Tamaulipas', 'Tlaxcala', 'Veracruz', 'Yucatán', ...
+    'Zacatecas', 'CDMX'};
 
 % Imprimir el orden de ciudades recorridas por la mejor solución encontrada
 [~, idx] = min(Resultados_Generales);
 mejor_solucion = Permutacion_ciudades(idx, :);
-index_best= find(mejor_solucion==ciudad_inicio);
-mejor_solucion= rearrangeFromIndex(mejor_solucion, index_best);
 
 fprintf('Orden de ciudades recorridas:\n');
 for i = 1:length(mejor_solucion)
@@ -177,7 +155,7 @@ while any(~visitado) % Mientras haya alguna ciudad no visitada
     ciclo = ciclo + 1;
     pos_actual = pos_inicio;
 
-    % Alternar padres según el ciclo
+    % Alternar Padres según el ciclo
     if mod(ciclo, 2) == 1
         padre_actual = padre1;
         otro_padre = padre2;
@@ -207,35 +185,12 @@ while any(~visitado) % Mientras haya alguna ciudad no visitada
 end
 end
 
-function costo = Costo(recorrido, ciudad_inicio, Distancias , Ventana_tiempo, noCiudades)
+function costo = Costo(recorrido, Distancias, noCiudades)
     costo = 0;
-    Pos_inicio= find(recorrido==ciudad_inicio);
-    recorrido= rearrangeFromIndex(recorrido, Pos_inicio);
     for i = 1:noCiudades-1
-        if i+1 > length(recorrido) || recorrido(i+1) > size(Distancias, 1)
-            error('Índice fuera de los límites al calcular costo. Verifica el recorrido.');
-        end
         costo = costo + Distancias(recorrido(i), recorrido(i+1));
-        vent_inferior = Ventana_tiempo(recorrido(i+1), 1);
-        vent_superior = Ventana_tiempo(recorrido(i+1), 2);
-        if costo < vent_inferior
-            costo= vent_inferior;
-        end
-        if costo > vent_superior
-            penalizacion = (costo - vent_superior)^2;
-            costo = costo + 1*penalizacion;
-        end
     end
-    costo = costo + Distancias(recorrido(noCiudades), recorrido(1));
-    vent_inferior = Ventana_tiempo(recorrido(1), 1);
-    vent_superior = Ventana_tiempo(recorrido(1), 2);
-    if costo < vent_inferior
-        costo= vent_inferior;
-    end
-    if costo > vent_superior
-        penalizacion = (costo - vent_superior)^2;
-        costo = costo + 1*penalizacion;
-    end
+    costo = costo + Distancias(recorrido(noCiudades), recorrido(1)); % Retorno a la ciudad inicial
 end
 
 function mutado = Mutacion(individuo, noCiudades)
@@ -245,27 +200,17 @@ function mutado = Mutacion(individuo, noCiudades)
     mutado(idx(2)) = individuo(idx(1));
 end
 
-function padres = SeleccionTorneo(Pob, Aptitud_Pob, num_pares)
-    num_competidores = 2;
-    num_pob = size(Pob, 1);
-    padres = zeros(num_pares, size(Pob, 2));
-    for i = 1:num_pares
-        competidores = randperm(num_pob, num_competidores);
-        [~, idx] = min(Aptitud_Pob(competidores));
-        padres(i, :) = Pob(competidores(idx), :);
+function Padres = SeleccionTorneo(Pob, Aptitud_Pob, Num_Pob)
+    Num_Competidores = 2;
+    Padres = zeros(Num_Pob, size(Pob, 2));
+    for i = 1:Num_Pob
+        Competidores = randperm(Num_Pob, Num_Competidores);
+        [~, idx] = min(Aptitud_Pob(Competidores));
+        Padres(i, :) = Pob(Competidores(idx), :);
     end
 end
 
-function rearrangedArray = rearrangeFromIndex(array, startIndex)
-    % Verificar que el índice sea válido
-    if startIndex < 1 || startIndex > length(array)
-        error('El índice debe estar entre 1 y el tamaño del arreglo.');
-    end
-    % Rearreglar el arreglo desde el índice dado
-    rearrangedArray = [array(startIndex:end), array(1:startIndex-1)];
-end
-
-function hijo_premium = heuristica_abruptos(Hijo, m, distancias, ventanas_tiempo, num_ciudades, ciudad_inicio)
+function hijo_premium = heuristica_abruptos(Hijo, m, distancias, num_ciudades)
     for i=1:num_ciudades
         %Seleccion entre ciudades cercanas
         [~,idx]= sort(distancias(i,:));
@@ -289,9 +234,9 @@ function hijo_premium = heuristica_abruptos(Hijo, m, distancias, ventanas_tiempo
         Ruta2 = [Ruta(1:posiciones(2)-1), i, Ruta(posiciones(2):end)];
         
         %Seleccionar la mejor ruta entre: Hijo, Ruta1 y Ruta 2
-        Aptitud_Hijo= Costo(Hijo, ciudad_inicio, distancias, ventanas_tiempo, num_ciudades);
-        Ruta_1 = Costo(Ruta1, ciudad_inicio, distancias, ventanas_tiempo, num_ciudades);
-        Ruta_2 = Costo(Ruta2, ciudad_inicio, distancias, ventanas_tiempo, num_ciudades);
+        Aptitud_Hijo= Costo(Hijo, distancias, num_ciudades);
+        Ruta_1 = Costo(Ruta1, distancias, num_ciudades);
+        Ruta_2 = Costo(Ruta2, distancias, num_ciudades);
         
         %Sustitucion
         individuos=[Hijo; Ruta1; Ruta2];

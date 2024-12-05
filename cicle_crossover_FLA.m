@@ -1,6 +1,7 @@
 padre1=[5 3 9 8 2 1 7 4 6];
 padre2=[3 9 5 6 4 7 1 8 2];
-hijo = CycleCrossover(padre1, padre2, 9)
+hijo1 = CycleCrossover(padre1, padre2, 9)
+hijo2 = CycleCrossover(padre2, padre1, 9)
 
 function hijo = CycleCrossover(padre1, padre2, noCiudades)
     hijo = zeros(1, noCiudades);           % Inicializar el hijo con ceros
