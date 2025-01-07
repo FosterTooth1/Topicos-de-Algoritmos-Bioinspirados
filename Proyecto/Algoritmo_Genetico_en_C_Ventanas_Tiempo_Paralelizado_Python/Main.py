@@ -13,16 +13,16 @@ class ResultadoGenetico(Structure):
     ]
 
 # Clase para la biblioteca compartida del algoritmo genético
-class AlgoritmoGenetico:
+class AlgoritmoGeneticoParalelizado:
     def __init__(self, ruta_biblioteca):
         # Cargamos la biblioteca compartida desde la ruta proporcionada
         self.biblioteca = ctypes.CDLL(ruta_biblioteca)
         
-        # Configuramos el tipo de retorno de la función `ejecutar_algoritmo_genetico_ventanas_tiempo`
-        self.biblioteca.ejecutar_algoritmo_genetico_ventanas_tiempo.restype = POINTER(ResultadoGenetico)
+        # Configuramos el tipo de retorno de la función `ejecutar_algoritmo_genetico_ventanas_tiempo_paralelizado`
+        self.biblioteca.ejecutar_algoritmo_genetico_ventanas_tiempo_paralelizado.restype = POINTER(ResultadoGenetico)
         
-        # Especificamos los tipos de argumentos que espera `ejecutar_algoritmo_genetico_ventanas_tiempo`
-        self.biblioteca.ejecutar_algoritmo_genetico_ventanas_tiempo.argtypes = [
+        # Especificamos los tipos de argumentos que espera `ejecutar_algoritmo_genetico_ventanas_tiempo_paralelizado`
+        self.biblioteca.ejecutar_algoritmo_genetico_ventanas_tiempo_paralelizado.argtypes = [
             c_int,      # tamano_poblacion
             c_int,      # longitud_genotipo
             c_int,      # num_generaciones
@@ -44,8 +44,8 @@ class AlgoritmoGenetico:
             # Convertimos el nombre del archivo a una cadena de bytes
             nombre_archivo_bytes = nombre_archivo.encode('utf-8')
             
-            # Llamamos a la función `ejecutar_algoritmo_genetico_ventanas_tiempo` de la biblioteca C
-            resultado = self.biblioteca.ejecutar_algoritmo_genetico_ventanas_tiempo(
+            # Llamamos a la función `ejecutar_algoritmo_genetico_ventanas_tiempo_paralelizado` de la biblioteca C
+            resultado = self.biblioteca.ejecutar_algoritmo_genetico_ventanas_tiempo_paralelizado(
                 tamano_poblacion,
                 longitud_genotipo,
                 num_generaciones,
@@ -101,7 +101,7 @@ def main():
         raise RuntimeError(f"No se encuentra la biblioteca en {ruta_biblioteca}")
     
     # Creamos una instancia del wrapper para la biblioteca
-    ag = AlgoritmoGenetico(ruta_biblioteca)
+    ag = AlgoritmoGeneticoParalelizado(ruta_biblioteca)
     
     # Definir los parámetros para el algoritmo genético
     tamano_poblacion = 10000

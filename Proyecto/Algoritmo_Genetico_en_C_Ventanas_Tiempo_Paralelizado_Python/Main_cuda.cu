@@ -20,7 +20,7 @@ typedef struct {
 
 extern "C" {
 // Implementación del algoritmo genético
-EXPORT ResultadoGenetico* ejecutar_algoritmo_genetico_ventanas_tiempo(
+EXPORT ResultadoGenetico* ejecutar_algoritmo_genetico_ventanas_tiempo_paralelizado(
     int tamano_poblacion,         // Tamaño de la población inicial
     int longitud_genotipo,        // Longitud del genotipo (número de ciudades)
     int num_generaciones,         // Número de generaciones a ejecutar
