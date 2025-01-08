@@ -1022,9 +1022,9 @@ def main():
     print("Comparativa de Generaciones con Población 500 guardada en 'Comparativa_Generaciones_Poblacion_500.xlsx'\n")
     '''
     # --- Cuarta Comparativa: Variando Generaciones con Poblaciones Grandes ---
-    print("Iniciando comparativa de Generaciones con Poblaciones Grandes...\n")
+    print("Iniciando comparativa de Generaciones con Poblaciones Grande...\n")
     for generaciones in generaciones_varianza:
-        poblacion = 20000  # Población fija para esta comparativa
+        poblacion = 5000  # Población fija para esta comparativa
         tiempos = ejecutar_algoritmos_generaciones_poblacion_grandes(poblacion, generaciones)
         resultados_generaciones_poblacion_grandes.append(tiempos)
 
