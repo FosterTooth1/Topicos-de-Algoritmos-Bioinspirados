@@ -1,5 +1,5 @@
 clc
-clear 
+clear
 close all
 
 % Solicitar al usuario el número de veces que se debe repetir el algoritmo
