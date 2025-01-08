@@ -5,7 +5,7 @@ int main(int argc, char** argv) {
     // Iniciamos la medición del tiempo
     time_t inicio = time(NULL);
 
-    // Parámetros del algoritmo genético
+    // Definimos los parámetros del algoritmo genético
     srand(time(NULL));
     int tamano_poblacion = 1000;
     int longitud_genotipo = 32;
@@ -16,11 +16,11 @@ int main(int argc, char** argv) {
     double prob_cruce    = 0.9;
     int km_hr = 80;
 
-    // Cargar archivo de distancias
+    // Cargamos el archivo de distancias
     const char *nombre_archivo = "Distancias_no_head.csv";
     double **distancias = (double **)malloc(longitud_genotipo * sizeof(double*));
-    for(int i=0; i<longitud_genotipo; i++) {
-        distancias[i] = (double*)malloc(longitud_genotipo*sizeof(double));
+    for(int i = 0; i < longitud_genotipo; i++) {
+        distancias[i] = (double*)malloc(longitud_genotipo * sizeof(double));
     }
     FILE *archivo = fopen(nombre_archivo, "r");
     if(!archivo) {
@@ -28,21 +28,21 @@ int main(int argc, char** argv) {
         return 1;
     }
     char linea[8192];
-    int fila=0;
-    while(fgets(linea,sizeof(linea), archivo) && fila<longitud_genotipo) {
-        char *token = strtok(linea,",");
-        int columna=0;
-        while(token && columna<longitud_genotipo) {
-            // Convertir a double y convertir de km a hr
-            distancias[fila][columna] = (atof(token))/km_hr;
-            token = strtok(NULL,",");
+    int fila = 0;
+    while(fgets(linea, sizeof(linea), archivo) && fila < longitud_genotipo) {
+        char *token = strtok(linea, ",");
+        int columna = 0;
+        while(token && columna < longitud_genotipo) {
+            // Convertimos a double y convertimos de km a hr
+            distancias[fila][columna] = (atof(token)) / km_hr;
+            token = strtok(NULL, ",");
             columna++;
         }
         fila++;
     }
     fclose(archivo);
 
-    // Nombres de las ciudades (solo para impresión)
+    // Definimos los nombres de las ciudades (solo para impresión)
     const char nombres_ciudades[32][20] = {
         "Aguascalientes","Baja California","Baja California Sur","Campeche","Chiapas",
         "Chihuahua","Coahuila","Colima","Durango","Guanajuato","Guerrero","Hidalgo",
@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
         "Tlaxcala","Veracruz","Yucatan","Zacatecas","CDMX"
     };
 
-    // Cereamos las ventanas de tiempo para cada ciudad
+    // Creamos las ventanas de tiempo para cada ciudad
     double ventanas_tiempo[32][2] = {
         {8, 12}, {9, 13}, {10, 14}, {11, 15}, {12, 16}, {13, 17}, {14, 18},
         {15, 19}, {16, 20}, {17, 21}, {18, 22}, {19, 23}, {20, 0}, {21, 1},
@@ -60,29 +60,29 @@ int main(int argc, char** argv) {
         {13, 17}, {14, 18}, {15, 19}
     };
 
-    // Aplanar ventanas de tiempo
+    // Aplanamos las ventanas de tiempo
     double *h_ventanas_tiempo_flat = (double*)malloc(longitud_genotipo * 2 * sizeof(double));
     for (int i = 0; i < longitud_genotipo; i++) {
-        h_ventanas_tiempo_flat[i * 2] = ventanas_tiempo[i][0];
+        h_ventanas_tiempo_flat[i * 2]     = ventanas_tiempo[i][0];
         h_ventanas_tiempo_flat[i * 2 + 1] = ventanas_tiempo[i][1];
     }
 
-    // Aplanar distancias
-    double *h_distancias_flat = (double*)malloc(longitud_genotipo*longitud_genotipo*sizeof(double));
-    for(int i=0; i<longitud_genotipo; i++) {
-        for(int j=0; j<longitud_genotipo; j++) {
-            h_distancias_flat[i*longitud_genotipo + j] = distancias[i][j];
+    // Aplanamos las distancias
+    double *h_distancias_flat = (double*)malloc(longitud_genotipo * longitud_genotipo * sizeof(double));
+    for(int i = 0; i < longitud_genotipo; i++) {
+        for(int j = 0; j < longitud_genotipo; j++) {
+            h_distancias_flat[i * longitud_genotipo + j] = distancias[i][j];
         }
     }
     
-    // Reserva en GPU para distancias y RNG states
+    // Reservamos en GPU para distancias y estados RNG
     double *d_distancias;
     curandState *d_states;
-    gpuErrchk(cudaMalloc(&d_distancias, longitud_genotipo*longitud_genotipo*sizeof(double)));
-    gpuErrchk(cudaMalloc(&d_states, tamano_poblacion*sizeof(curandState)));
+    gpuErrchk(cudaMalloc(&d_distancias, longitud_genotipo * longitud_genotipo * sizeof(double)));
+    gpuErrchk(cudaMalloc(&d_states, tamano_poblacion * sizeof(curandState)));
 
     gpuErrchk(cudaMemcpy(d_distancias, h_distancias_flat,
-                         longitud_genotipo*longitud_genotipo*sizeof(double),
+                         longitud_genotipo * longitud_genotipo * sizeof(double),
                          cudaMemcpyHostToDevice));
 
     double *d_ventanas_tiempo;
@@ -91,74 +91,75 @@ int main(int argc, char** argv) {
                         longitud_genotipo * 2 * sizeof(double),
                         cudaMemcpyHostToDevice));
 
-    // Configuración de CUDA
+    // Configuramos CUDA
     int blockSize, minGridSize, gridSize;
     obtenerConfiguracionCUDA(&blockSize, &minGridSize, &gridSize, tamano_poblacion);
-    //int blockSize = 64; // o 128
+    //int blockSize = 64; 
     //int gridSize = ( (tamano_poblacion/2) + blockSize - 1 ) / blockSize;
 
     setup_curand_kernel<<<gridSize, blockSize>>>(d_states, time(NULL));
     cudaDeviceSynchronize();
     gpuErrchk(cudaGetLastError());
 
-    // Crear poblaciones en CPU
+    // Creamos poblaciones en CPU
     poblacion *Poblacion = crear_poblacion(tamano_poblacion, longitud_genotipo);
     poblacion *padres    = crear_poblacion(tamano_poblacion, longitud_genotipo);
     poblacion *hijos     = crear_poblacion(tamano_poblacion, longitud_genotipo);
 
-    // Permutaciones iniciales
+    // Realizamos permutaciones iniciales
     crear_permutaciones(Poblacion, longitud_genotipo);
 
     // ---------------------------------------------------------
-    // Reservar estructuras (individuo_gpu) y genotipos en GPU
+    // Reservamos estructuras (individuo_gpu) y genotipos en GPU
     // ---------------------------------------------------------
     individuo_gpu *d_poblacion, *d_padres, *d_hijos;
-    gpuErrchk(cudaMalloc(&d_poblacion, tamano_poblacion*sizeof(individuo_gpu)));
-    gpuErrchk(cudaMalloc(&d_padres,    tamano_poblacion*sizeof(individuo_gpu)));
-    gpuErrchk(cudaMalloc(&d_hijos,     tamano_poblacion*sizeof(individuo_gpu)));
+    gpuErrchk(cudaMalloc(&d_poblacion, tamano_poblacion * sizeof(individuo_gpu)));
+    gpuErrchk(cudaMalloc(&d_padres,    tamano_poblacion * sizeof(individuo_gpu)));
+    gpuErrchk(cudaMalloc(&d_hijos,     tamano_poblacion * sizeof(individuo_gpu)));
 
     int *d_genotipos_poblacion, *d_genotipos_padres, *d_genotipos_hijos;
-    gpuErrchk(cudaMalloc(&d_genotipos_poblacion, tamano_poblacion*longitud_genotipo*sizeof(int)));
-    gpuErrchk(cudaMalloc(&d_genotipos_padres,    tamano_poblacion*longitud_genotipo*sizeof(int)));
-    gpuErrchk(cudaMalloc(&d_genotipos_hijos,     tamano_poblacion*longitud_genotipo*sizeof(int)));
+    gpuErrchk(cudaMalloc(&d_genotipos_poblacion, tamano_poblacion * longitud_genotipo * sizeof(int)));
+    gpuErrchk(cudaMalloc(&d_genotipos_padres,    tamano_poblacion * longitud_genotipo * sizeof(int)));
+    gpuErrchk(cudaMalloc(&d_genotipos_hijos,     tamano_poblacion * longitud_genotipo * sizeof(int)));
+
 
     // ---------------------------------------------------------
-    // (SOLUCIÓN A) Configurar punteros para "padres" en GPU
+    // Configuramos punteros para "padres" en GPU
     // ---------------------------------------------------------
     {
-        individuo_gpu *tempPadres = (individuo_gpu*)malloc(tamano_poblacion*sizeof(individuo_gpu));
-        for(int i=0; i<tamano_poblacion; i++){
+        individuo_gpu *tempPadres = (individuo_gpu*)malloc(tamano_poblacion * sizeof(individuo_gpu));
+        for(int i = 0; i < tamano_poblacion; i++){
             // cada d_padres[i] apuntará a su trozo en d_genotipos_padres
-            tempPadres[i].genotipo = d_genotipos_padres + i*longitud_genotipo;
+            tempPadres[i].genotipo = d_genotipos_padres + i * longitud_genotipo;
             tempPadres[i].fitness  = 0.0;  // se actualizará en kernels
         }
         gpuErrchk(cudaMemcpy(d_padres, tempPadres,
-                             tamano_poblacion*sizeof(individuo_gpu),
+                             tamano_poblacion * sizeof(individuo_gpu),
                              cudaMemcpyHostToDevice));
         free(tempPadres);
     }
 
     // ---------------------------------------------------------
-    // (SOLUCIÓN A) Configurar punteros para "hijos" en GPU
+    // Configuramos punteros para "hijos" en GPU
     // ---------------------------------------------------------
     {
-        individuo_gpu *tempHijos = (individuo_gpu*)malloc(tamano_poblacion*sizeof(individuo_gpu));
-        for(int i=0; i<tamano_poblacion; i++){
+        individuo_gpu *tempHijos = (individuo_gpu*)malloc(tamano_poblacion * sizeof(individuo_gpu));
+        for(int i = 0; i < tamano_poblacion; i++){
             // cada d_hijos[i] apuntará a su trozo en d_genotipos_hijos
-            tempHijos[i].genotipo = d_genotipos_hijos + i*longitud_genotipo;
+            tempHijos[i].genotipo = d_genotipos_hijos + i * longitud_genotipo;
             tempHijos[i].fitness  = 0.0;  // se actualizará en kernels
         }
         gpuErrchk(cudaMemcpy(d_hijos, tempHijos,
-                             tamano_poblacion*sizeof(individuo_gpu),
+                             tamano_poblacion * sizeof(individuo_gpu),
                              cudaMemcpyHostToDevice));
         free(tempHijos);
     }
     
-    // Ejemplo de blockSize=128, o el que hayas elegido
+    // Definimos blockSize_1 y gridSize_1
     int blockSize_1 = 32;
-    int gridSize_1  = ( (tamano_poblacion/2) + blockSize_1 - 1 ) / blockSize_1;
+    int gridSize_1  = ( (tamano_poblacion / 2) + blockSize_1 - 1 ) / blockSize_1;
 
-    // Cálculo de shared memory:
+    // Calculamos la memoria compartida:
     size_t espacioCrossover = 3UL * longitud_genotipo * sizeof(int);
     size_t espacioHeurRuta  = (size_t)longitud_genotipo * sizeof(int);
     size_t espacioHeurDist  = (size_t)longitud_genotipo * sizeof(DistanciaOrdenadaGPU);
@@ -167,37 +168,37 @@ int main(int argc, char** argv) {
     size_t sharedMemSize_1 = blockSize_1 * totalPorHilo;
 
     // ---------------------------------------------------------
-    // Copiar la población inicial (CPU->GPU) para d_poblacion
+    // Copiamos la población inicial (CPU->GPU) para d_poblacion
     // ---------------------------------------------------------
     copiarPoblacionCPUaGPU(Poblacion, d_poblacion, d_genotipos_poblacion, 
                            tamano_poblacion, longitud_genotipo);
 
-    // Evaluar población inicial
+    // Evaluamos la población inicial
     evaluar_poblacion_kernel<<<gridSize, blockSize>>>(d_poblacion, d_distancias, d_ventanas_tiempo,
                                                       tamano_poblacion, longitud_genotipo);
     cudaDeviceSynchronize();
     gpuErrchk(cudaGetLastError());
 
-    // Bajar resultados, ordenar
+    // Bajamos los resultados y ordenamos la población
     copiarPoblacionGPUaCPU(Poblacion, d_poblacion, d_genotipos_poblacion,
                            tamano_poblacion, longitud_genotipo);
     ordenar_poblacion(Poblacion);
 
-    // Mejor individuo
+    // Identificamos el mejor individuo
     individuo *Mejor_Individuo = (individuo*)malloc(sizeof(individuo));
-    Mejor_Individuo->genotipo = (int*)malloc(longitud_genotipo*sizeof(int));
+    Mejor_Individuo->genotipo = (int*)malloc(longitud_genotipo * sizeof(int));
     memcpy(Mejor_Individuo->genotipo, 
            Poblacion->individuos[0].genotipo, 
-           longitud_genotipo*sizeof(int));
+           longitud_genotipo * sizeof(int));
     Mejor_Individuo->fitness = Poblacion->individuos[0].fitness;
 
-    // Bucle principal
-    for(int gen=0; gen<num_generaciones; gen++) {
-        // Subir Poblacion (CPU->GPU) para la selección
+    // Ejecutamos el bucle principal
+    for(int gen = 0; gen < num_generaciones; gen++) {
+        // Subimos la Población (CPU->GPU) para la selección
         copiarPoblacionCPUaGPU(Poblacion, d_poblacion, d_genotipos_poblacion,
                                tamano_poblacion, longitud_genotipo);
 
-        // Selección
+        // Seleccionamos los padres
         seleccionar_padres_kernel<<<gridSize, blockSize>>>(d_poblacion, d_padres,
                                                            num_competidores,
                                                            tamano_poblacion,
@@ -206,7 +207,7 @@ int main(int argc, char** argv) {
         cudaDeviceSynchronize();
         gpuErrchk(cudaGetLastError());
 
-        // Cruzamiento
+        // Realizamos el cruzamiento
         cruzar_individuos_kernel<<<gridSize_1, blockSize_1, sharedMemSize_1>>>(
             d_padres, d_hijos,
             d_distancias, d_ventanas_tiempo, prob_cruce,
@@ -216,9 +217,10 @@ int main(int argc, char** argv) {
         cudaDeviceSynchronize();
         gpuErrchk(cudaGetLastError());
 
+        // Reconfiguramos CUDA si es necesario
         obtenerConfiguracionCUDA(&blockSize, &minGridSize, &gridSize, tamano_poblacion);
 
-        // Mutación
+        // Aplicamos la mutación
         mutar_individuos_kernel<<<gridSize, blockSize>>>(d_hijos, d_distancias, d_ventanas_tiempo,
                                                          prob_mutacion,
                                                          tamano_poblacion,
@@ -227,14 +229,14 @@ int main(int argc, char** argv) {
         cudaDeviceSynchronize();
         gpuErrchk(cudaGetLastError());
 
-        // Bajar hijos a CPU
+        // Bajamos los hijos a la CPU
         copiarPoblacionGPUaCPU(hijos, d_hijos, d_genotipos_hijos,
                                tamano_poblacion, longitud_genotipo);
 
-        // Actualizar Poblacion en CPU
+        // Actualizamos la Población en la CPU
         actualizar_poblacion(&Poblacion, hijos, longitud_genotipo);
 
-        // Evaluar con kernel (nueva Población)
+        // Evaluamos la nueva Población con el kernel
         copiarPoblacionCPUaGPU(Poblacion, d_poblacion, d_genotipos_poblacion,
                                tamano_poblacion, longitud_genotipo);
 
@@ -243,32 +245,33 @@ int main(int argc, char** argv) {
         cudaDeviceSynchronize();
         gpuErrchk(cudaGetLastError());
 
+        // Bajamos los resultados y ordenamos la población
         copiarPoblacionGPUaCPU(Poblacion, d_poblacion, d_genotipos_poblacion,
                                tamano_poblacion, longitud_genotipo);
         ordenar_poblacion(Poblacion);
 
-        // Mejor individuo
+        // Actualizamos el mejor individuo si es necesario
         if(Poblacion->individuos[0].fitness < Mejor_Individuo->fitness) {
             memcpy(Mejor_Individuo->genotipo,
                    Poblacion->individuos[0].genotipo,
-                   longitud_genotipo*sizeof(int));
+                   longitud_genotipo * sizeof(int));
             Mejor_Individuo->fitness = Poblacion->individuos[0].fitness;
         }
     }
 
-    // Imprimir mejor
+    // Imprimimos el mejor recorrido encontrado
     printf("\nMejor recorrido encontrado:\n");
-    for(int i=0; i<longitud_genotipo; i++) {
+    for(int i = 0; i < longitud_genotipo; i++) {
         printf("%s -> ", nombres_ciudades[Mejor_Individuo->genotipo[i]]);
     }
     printf("%s\n", nombres_ciudades[Mejor_Individuo->genotipo[0]]);
     printf("Distancia total: %f\n", Mejor_Individuo->fitness);
 
-    // Liberar memoria CPU
+    // Liberamos la memoria en la CPU
     liberar_poblacion(Poblacion);
     liberar_poblacion(padres);
     liberar_poblacion(hijos);
-    for(int i=0; i<longitud_genotipo; i++) {
+    for(int i = 0; i < longitud_genotipo; i++) {
         free(distancias[i]);
     }
     free(distancias);
@@ -278,7 +281,7 @@ int main(int argc, char** argv) {
     free(Mejor_Individuo->genotipo);
     free(Mejor_Individuo);
 
-    // Liberar memoria GPU
+    // Liberamos la memoria en la GPU
     gpuErrchk(cudaFree(d_distancias));
     gpuErrchk(cudaFree(d_states));
     gpuErrchk(cudaFree(d_ventanas_tiempo));
@@ -289,10 +292,10 @@ int main(int argc, char** argv) {
     gpuErrchk(cudaFree(d_genotipos_padres));
     gpuErrchk(cudaFree(d_genotipos_hijos));
 
-    // Tiempo final
+    // Finalizamos la medición del tiempo
     time_t fin = time(NULL);
     double tiempo = difftime(fin, inicio);
-    printf("Tiempo de ejecucion: %.2f segundos\n", tiempo);
+    printf("Tiempo de ejecución: %.2f segundos\n", tiempo);
 
     return 0;
 }
