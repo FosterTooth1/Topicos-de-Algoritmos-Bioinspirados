@@ -880,6 +880,65 @@ def main():
         print(f"Tiempo de ejecución: {tiempo_c_paralel:.4f} segundos\n")
 
         return tiempos
+    
+    def ejecutar_algoritmos_2(tamano_poblacion, num_generaciones, m):
+        tiempos = {}
+        # 1. Ejecutar Algoritmo Genético en C (Normal)
+        print(f"Ejecutando C (Normal) con población {tamano_poblacion}, generaciones {num_generaciones}, m={m}...")
+        nombre_biblioteca_normal = "genetic_algo_vent.dll" if os.name == 'nt' else "libgenetic_algo_vent.so"
+        ruta_biblioteca_normal = os.path.join(directorio_actual, nombre_biblioteca_normal)
+
+        if not os.path.exists(ruta_biblioteca_normal):
+            raise RuntimeError(f"No se encuentra la biblioteca en {ruta_biblioteca_normal}")
+
+        ag_normal = AlgoritmoGeneticoNormal(ruta_biblioteca_normal)
+
+        start_time = time.time()
+        resultado_normal = ag_normal.ejecutar(
+            tamano_poblacion=tamano_poblacion,
+            longitud_genotipo=longitud_genotipo,
+            num_generaciones=num_generaciones,
+            num_competidores=num_competidores,
+            m=m,
+            probabilidad_mutacion=probabilidad_mutacion,
+            probabilidad_cruce=probabilidad_cruce,
+            nombre_archivo=nombre_archivo,
+            km_hr=km_hr
+        )
+        end_time = time.time()
+        tiempo_c_normal = resultado_normal['tiempo_ejecucion']  # Asumiendo que este valor es preciso
+        tiempos['C (Normal)'] = tiempo_c_normal
+        print(f"Tiempo de ejecución: {tiempo_c_normal:.4f} segundos\n")
+
+        # 2. Ejecutar Algoritmo Genético en C (Paralelizado)
+        print(f"Ejecutando C (Paralelizado) con población {tamano_poblacion}, generaciones {num_generaciones}, m={m}...")
+        nombre_biblioteca_paralell = "genetic_algo_vent_paralell.dll" if os.name == 'nt' else "libgenetic_algo_vent_paralell.so"
+        ruta_biblioteca_paralell = os.path.join(directorio_actual, nombre_biblioteca_paralell)
+
+        if not os.path.exists(ruta_biblioteca_paralell):
+            raise RuntimeError(f"No se encuentra la biblioteca en {ruta_biblioteca_paralell}")
+
+        ag_paralell = AlgoritmoGeneticoParalelizado(ruta_biblioteca_paralell)
+
+        start_time = time.time()
+        resultado_paralelizado = ag_paralell.ejecutar(
+            tamano_poblacion=tamano_poblacion,
+            longitud_genotipo=longitud_genotipo,
+            num_generaciones=num_generaciones,
+            num_competidores=num_competidores,
+            m=m,
+            probabilidad_mutacion=probabilidad_mutacion,
+            probabilidad_cruce=probabilidad_cruce,
+            nombre_archivo=nombre_archivo,
+            km_hr=km_hr
+        )
+        end_time = time.time()
+        tiempo_c_paralel = resultado_paralelizado['tiempo_ejecucion']  # Asumiendo que este valor es preciso
+        tiempos['C (Paralelizado)'] = tiempo_c_paralel
+        print(f"Tiempo de ejecución: {tiempo_c_paralel:.4f} segundos\n")
+
+        return tiempos
+
 
     def ejecutar_algoritmos_generaciones_poblacion_500(num_generaciones):
         tiempos = {}
@@ -898,7 +957,7 @@ def main():
         m = 3  # Valor fijo de m para esta comparativa
 
         # Ejecutar los tres algoritmos
-        algoritmos_tiempos = ejecutar_algoritmos_3(tamano_poblacion, num_generaciones, m)
+        algoritmos_tiempos = ejecutar_algoritmos_2(tamano_poblacion, num_generaciones, m)
         tiempos['Población'] = tamano_poblacion
         tiempos['Generaciones'] = num_generaciones
         tiempos.update(algoritmos_tiempos)
@@ -911,12 +970,12 @@ def main():
         num_generaciones = 1000
 
         # Ejecutar los tres algoritmos
-        algoritmos_tiempos = ejecutar_algoritmos_3(tamano_poblacion, num_generaciones, m)
+        algoritmos_tiempos = ejecutar_algoritmos_2(tamano_poblacion, num_generaciones, m)
         tiempos['m'] = m
         tiempos.update(algoritmos_tiempos)
 
         return tiempos
-
+    '''
     # --- Primera Comparativa: 4 Algoritmos con Poblaciones Pequeñas ---
     print("Iniciando comparativa de 4 algoritmos con poblaciones pequeñas...\n")
     for poblacion in poblaciones_pequenas:
@@ -961,13 +1020,13 @@ def main():
     df_generaciones_poblacion_500.sort_values('Generaciones', inplace=True)
     df_generaciones_poblacion_500.to_excel("Comparativa_Generaciones_Poblacion_500.xlsx", index=False, engine='openpyxl')
     print("Comparativa de Generaciones con Población 500 guardada en 'Comparativa_Generaciones_Poblacion_500.xlsx'\n")
-
+    '''
     # --- Cuarta Comparativa: Variando Generaciones con Poblaciones Grandes ---
     print("Iniciando comparativa de Generaciones con Poblaciones Grandes...\n")
-    for poblacion in poblaciones_grandes:
-        for generaciones in generaciones_varianza:
-            tiempos = ejecutar_algoritmos_generaciones_poblacion_grandes(poblacion, generaciones)
-            resultados_generaciones_poblacion_grandes.append(tiempos)
+    for generaciones in generaciones_varianza:
+        poblacion = 20000  # Población fija para esta comparativa
+        tiempos = ejecutar_algoritmos_generaciones_poblacion_grandes(poblacion, generaciones)
+        resultados_generaciones_poblacion_grandes.append(tiempos)
 
     # Crear DataFrame y guardar en Excel
     df_generaciones_poblacion_grandes = pd.DataFrame(resultados_generaciones_poblacion_grandes)
@@ -993,7 +1052,7 @@ def main():
 
     # --- Opcional: Graficar los resultados ---
     # Puedes personalizar o eliminar estas secciones según tus necesidades
-
+    '''
     # Graficar la primera comparativa
     plt.figure(figsize=(12, 8))
     for algoritmo in ['Python Optimizado (Numba)', 'Python (Normal)', 'C (Normal)', 'C (Paralelizado)']:
@@ -1032,7 +1091,7 @@ def main():
     plt.tight_layout()
     plt.savefig("Grafica_Generaciones_Poblacion_500.png")
     plt.show()
-
+    '''
     # Graficar la cuarta comparativa (Generaciones con Poblaciones Grandes)
     plt.figure(figsize=(12, 8))
     for algoritmo in ['Python Optimizado (Numba)', 'C (Normal)', 'C (Paralelizado)']:
