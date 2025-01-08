@@ -970,7 +970,7 @@ def main():
         num_generaciones = 1000
 
         # Ejecutar los tres algoritmos
-        algoritmos_tiempos = ejecutar_algoritmos_2(tamano_poblacion, num_generaciones, m)
+        algoritmos_tiempos = ejecutar_algoritmos_3(tamano_poblacion, num_generaciones, m)
         tiempos['m'] = m
         tiempos.update(algoritmos_tiempos)
 
@@ -1024,14 +1024,14 @@ def main():
     # --- Cuarta Comparativa: Variando Generaciones con Poblaciones Grandes ---
     print("Iniciando comparativa de Generaciones con Poblaciones Grande...\n")
     for generaciones in generaciones_varianza:
-        poblacion = 5000  # Población fija para esta comparativa
+        poblacion = 50  # Población fija para esta comparativa
         tiempos = ejecutar_algoritmos_generaciones_poblacion_grandes(poblacion, generaciones)
         resultados_generaciones_poblacion_grandes.append(tiempos)
 
     # Crear DataFrame y guardar en Excel
     df_generaciones_poblacion_grandes = pd.DataFrame(resultados_generaciones_poblacion_grandes)
     df_generaciones_poblacion_grandes = df_generaciones_poblacion_grandes[
-        ['Población', 'Generaciones', 'Python Optimizado (Numba)', 'C (Normal)', 'C (Paralelizado)']
+        ['Población', 'Generaciones', 'C (Normal)', 'C (Paralelizado)']
     ]
     df_generaciones_poblacion_grandes.sort_values(['Población', 'Generaciones'], inplace=True)
     df_generaciones_poblacion_grandes.to_excel("Comparativa_Generaciones_Poblacion_Grandes.xlsx", index=False, engine='openpyxl')
