@@ -1,10 +1,12 @@
 #include "Biblioteca_cuda.h"
-#include <math.h> // para log2, etc.
 
 // ----------------------------------------------------
 // Implementación de la macro para manejo de errores
 // ----------------------------------------------------
-// Definición de la función
+
+// Función para verificar y manejar errores de CUDA
+// Recibe el código de error, el nombre del archivo y la línea donde ocurrió el error
+// No devuelve nada, pero puede abortar la ejecución si se detecta un error
 void gpuAssert(cudaError_t code, const char *file, int line, bool abort) {
     if (code != cudaSuccess) {
         fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
@@ -15,23 +17,33 @@ void gpuAssert(cudaError_t code, const char *file, int line, bool abort) {
 // ----------------------------------------------------
 // Kernels y funciones CUDA
 // ----------------------------------------------------
+
+// Kernel para inicializar los estados de curand en la GPU
+// Recibe un puntero a los estados de curand y una semilla para la generación de números aleatorios
+// No devuelve nada, pero inicializa el estado de curand para cada hilo
 __global__ void setup_curand_kernel(curandState *states, unsigned long seed) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     curand_init(seed, idx, 0, &states[idx]);
 }
 
+// Función para obtener la configuración óptima de bloques y grids en CUDA
+// Recibe punteros a blockSize, minGridSize, gridSize y el tamaño N del problema
+// No devuelve nada, pero actualiza los valores de blockSize, minGridSize y gridSize
 void obtenerConfiguracionCUDA(int *blockSize, int *minGridSize, int *gridSize, int N) {
     cudaOccupancyMaxPotentialBlockSize(minGridSize, blockSize, evaluar_poblacion_kernel, 0, N);
     *gridSize = (N + *blockSize - 1) / *blockSize;
 }
 
+// Kernel para evaluar la población en la GPU
+// Recibe un puntero a la población en la GPU, matrices de distancias y ventanas de tiempo, y los tamaños de la población y el genotipo
+// No devuelve nada, pero actualiza el fitness de cada individuo en la población
 __global__ void evaluar_poblacion_kernel(individuo_gpu *poblacion, double *distancias, double *ventanas_tiempo,
                                          int tamano_poblacion, int longitud_genotipo) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= tamano_poblacion) return;
 
-    double total_cost = 0.0;      // Costo total del recorrido (en horas)
-    double tiempo_acumulado = 0.0; // Tiempo transcurrido desde el inicio del recorrido
+    double total_cost = 0.0;         // Costo total del recorrido (en horas)
+    double tiempo_acumulado = 0.0;   // Tiempo transcurrido desde el inicio del recorrido
 
     int *genotipo = poblacion[idx].genotipo;
 
@@ -73,6 +85,9 @@ __global__ void evaluar_poblacion_kernel(individuo_gpu *poblacion, double *dista
     poblacion[idx].fitness = total_cost;
 }
 
+// Kernel para seleccionar padres mediante torneo en la GPU
+// Recibe punteros a la población y a los padres en la GPU, el número de competidores, el tamaño de la población, la longitud del genotipo y los estados de curand
+// No devuelve nada, pero selecciona los mejores individuos para ser padres
 __global__ void seleccionar_padres_kernel(individuo_gpu *poblacion, individuo_gpu *padres,
                                           int num_competidores, int tamano_poblacion,
                                           int longitud_genotipo, curandState *states) {
@@ -82,6 +97,7 @@ __global__ void seleccionar_padres_kernel(individuo_gpu *poblacion, individuo_gp
     int mejor_idx = -1;
     double mejor_fitness = 1e9;
 
+    // Realiza un torneo entre num_competidores individuos aleatorios
     for (int i = 0; i < num_competidores; i++) {
         int rand_idx = curand(&states[idx]) % tamano_poblacion;
         if (poblacion[rand_idx].fitness < mejor_fitness) {
@@ -90,13 +106,16 @@ __global__ void seleccionar_padres_kernel(individuo_gpu *poblacion, individuo_gp
         }
     }
 
-    // Copiar el mejor individuo al arreglo de padres
+    // Copia el mejor individuo seleccionado al arreglo de padres
     for (int j = 0; j < longitud_genotipo; j++) {
         padres[idx].genotipo[j] = poblacion[mejor_idx].genotipo[j];
     }
     padres[idx].fitness = poblacion[mejor_idx].fitness;
 }
 
+// Kernel para cruzar individuos y generar hijos en la GPU
+// Recibe punteros a los padres y a los hijos en la GPU, matrices de distancias y ventanas de tiempo, la probabilidad de cruce, el tamaño de la población, la longitud del genotipo, el parámetro m y los estados de curand
+// No devuelve nada, pero genera nuevos hijos a partir de los padres seleccionados
 __global__ void cruzar_individuos_kernel(individuo_gpu *padres, individuo_gpu *hijos,
                                          double *distancias, double *ventanas_de_tiempo, double prob_cruce,
                                          int tamano_poblacion, int longitud_genotipo,
@@ -113,7 +132,7 @@ __global__ void cruzar_individuos_kernel(individuo_gpu *padres, individuo_gpu *h
     // blockSize = blockDim.x
     // Cada hilo "i" dentro del bloque usará un trozo de sMem
 
-    size_t espacioCrossover = 3UL * longitud_genotipo * sizeof(int);  // hijo1,hijo2,visitado
+    size_t espacioCrossover = 3UL * longitud_genotipo * sizeof(int);  // hijo1, hijo2, visitado
     size_t espacioHeurRuta  = (size_t)longitud_genotipo * sizeof(int);
     size_t espacioHeurDist  = (size_t)longitud_genotipo * sizeof(DistanciaOrdenadaGPU);
 
@@ -160,10 +179,6 @@ __global__ void cruzar_individuos_kernel(individuo_gpu *padres, individuo_gpu *h
             longitud_genotipo
         );
 
-        // 2) Generar hijo2 con cycle_crossover_device(padre2, padre1)
-        //    *Pero* hay que "reiniciar" "visitado" antes de reusar. Lo más fácil:
-        //    reusar la misma "visitado[]" si deseas, o usar un trozo distinto.
-        //    Aquí, por simplicidad, volvemos a poner en 0:
         for (int i = 0; i < longitud_genotipo; i++) {
             visitado[i] = 0;
         }
@@ -175,10 +190,9 @@ __global__ void cruzar_individuos_kernel(individuo_gpu *padres, individuo_gpu *h
             longitud_genotipo
         );
 
-        // (Opcional) Llamar heurística:
-        heuristica_abruptos_gpu(hijo1, longitud_genotipo, m, distancias, ventanas_de_tiempo,ruta_temp, dist_ordenadas);
-
-        heuristica_abruptos_gpu(hijo2, longitud_genotipo, m, distancias, ventanas_de_tiempo,ruta_temp, dist_ordenadas);
+        // Llamar heurística:
+        heuristica_abruptos_gpu(hijo1, longitud_genotipo, m, distancias, ventanas_de_tiempo, ruta_temp, dist_ordenadas);
+        heuristica_abruptos_gpu(hijo2, longitud_genotipo, m, distancias, ventanas_de_tiempo, ruta_temp, dist_ordenadas);
 
         // 3) Evaluar padres e hijos
         double fit_p1 = evaluar_individuo_gpu(padres[idx2].genotipo, distancias, ventanas_de_tiempo, longitud_genotipo);
@@ -224,23 +238,30 @@ __global__ void cruzar_individuos_kernel(individuo_gpu *padres, individuo_gpu *h
     }
 }
 
+// Kernel para mutar individuos en la GPU
+// Recibe punteros a los individuos en la GPU, matrices de distancias y ventanas de tiempo, la probabilidad de mutación, el tamaño de la población, la longitud del genotipo y los estados de curand
+// No devuelve nada, pero aplica mutaciones a los individuos seleccionados y actualiza su fitness
 __global__ void mutar_individuos_kernel(individuo_gpu *individuos, double *distancias, double *ventanas_de_tiempo,
                                         double prob_mutacion, int tamano_poblacion,
                                         int longitud_genotipo, curandState *states) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= tamano_poblacion) return;
 
+    // Determina si el individuo debe mutar basado en la probabilidad de mutación
     if (curand_uniform(&states[idx]) < prob_mutacion) {
+        // Selecciona dos índices aleatorios para intercambiar en el genotipo
         int idx1 = (int)(curand_uniform(&states[idx]) * longitud_genotipo);
         int idx2 = (int)(curand_uniform(&states[idx]) * longitud_genotipo);
         while (idx2 == idx1) {
             idx2 = (int)(curand_uniform(&states[idx]) * longitud_genotipo);
         }
+
+        // Intercambia los genes en las posiciones seleccionadas
         int temp = individuos[idx].genotipo[idx1];
         individuos[idx].genotipo[idx1] = individuos[idx].genotipo[idx2];
         individuos[idx].genotipo[idx2] = temp;
 
-        // recalcular fitness local
+        // Recalcula el fitness local del individuo tras la mutación
         double total_cost = 0.0;
         for (int i = 0; i < longitud_genotipo - 1; i++) {
             total_cost += distancias[individuos[idx].genotipo[i] * longitud_genotipo +
@@ -252,21 +273,159 @@ __global__ void mutar_individuos_kernel(individuo_gpu *individuos, double *dista
     }
 }
 
+// Actualiza la población destino con la población origen
+// Recibe:
+//   - individuo_gpu *destino: Doble puntero a la población destino en la GPU
+//   - individuo_gpu *origen: Puntero a la población origen en la GPU
+//   - int longitud_genotipo: Longitud del genotipo de cada individuo
+// No devuelve nada, pero reemplaza la población destino con la población origen
+__global__ void actualizar_poblacion_kernel(individuo_gpu *destino,
+                                            individuo_gpu *origen,
+                                            int tamano_poblacion,
+                                            int longitud_genotipo)
+{
+    // Identificador global del hilo
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Copiamos solo si idx está dentro del rango
+    if (idx < tamano_poblacion) {
+        // Copiamos todos los genes
+        for(int j = 0; j < longitud_genotipo; j++) {
+            destino[idx].genotipo[j] = origen[idx].genotipo[j];
+        }
+        // Copiamos el fitness
+        destino[idx].fitness = origen[idx].fitness;
+    }
+}
+
+// Función auxiliar para obtener el mejor individuo (índice + fitness) en GPU
+// Recibe punteros a los individuos en la poblacion, el tamaño de la poblacion, el tamaño del bloque de memoria
+// y un puntero con los indices y el genotipo del mejor individuo en GPU
+// No devuelve nada, todo se hace por referencia
+void buscarMejorIndividuoEnGPU(individuo_gpu *d_poblacion,
+                               int tamano_poblacion,
+                               int blockSize,
+                               MinData *d_result)
+{
+    // 1) Fase 1: reduce en muchos bloques
+    int gridSize = (tamano_poblacion + blockSize - 1)/blockSize;
+    size_t sharedMemSize = blockSize * sizeof(MinData);
+
+    // Reservamos array d_parciales (gridSize entradas)
+    MinData *d_parciales = nullptr;
+    cudaMalloc(&d_parciales, gridSize*sizeof(MinData));
+
+    reduce_find_min_phase1<<<gridSize, blockSize, sharedMemSize>>>(
+        d_poblacion,
+        tamano_poblacion,
+        d_parciales
+    );
+    cudaDeviceSynchronize();
+
+    // 2) Fase 2: reduce de los parciales (gridSize) a un solo resultado
+    //            Podemos lanzar 1 bloque con blockSize >= gridSize
+    int blockSize2 = 256;
+    size_t sharedMemSize2 = blockSize2*sizeof(MinData);
+
+    reduce_find_min_phase2<<<1, blockSize2, sharedMemSize2>>>(
+        d_parciales,
+        gridSize,
+        d_result
+    );
+    cudaDeviceSynchronize();
+
+    cudaFree(d_parciales);
+}
+
+// Implementación de los kernels de reduce (búsqueda del mínimo)
+__global__ void reduce_find_min_phase1(
+    const individuo_gpu *d_poblacion,
+    int tamano_poblacion,
+    MinData *d_parciales // una entrada por bloque
+)
+{
+    extern __shared__ MinData sdata[]; // Memoria compartida dinámica
+
+    int tidGlobal = blockIdx.x * blockDim.x + threadIdx.x;
+    int tidLocal  = threadIdx.x;
+
+    // Inicializamos con "valores grandes"
+    sdata[tidLocal].fitness = 1e30;
+    sdata[tidLocal].idx     = -1;
+
+    // Cargamos desde memoria global
+    if(tidGlobal < tamano_poblacion){
+        sdata[tidLocal].fitness = d_poblacion[tidGlobal].fitness;
+        sdata[tidLocal].idx     = tidGlobal;
+    }
+    __syncthreads();
+
+    // Reducción (min) en la memoria compartida
+    for(int stride = blockDim.x/2; stride>0; stride >>= 1){
+        if(tidLocal < stride){
+            if(sdata[tidLocal + stride].fitness < sdata[tidLocal].fitness){
+                sdata[tidLocal].fitness = sdata[tidLocal + stride].fitness;
+                sdata[tidLocal].idx     = sdata[tidLocal + stride].idx;
+            }
+        }
+        __syncthreads();
+    }
+
+    // El hilo 0 del bloque escribe su resultado parcial
+    if(tidLocal == 0){
+        d_parciales[blockIdx.x] = sdata[0];
+    }
+}
+
+__global__ void reduce_find_min_phase2(
+    const MinData *d_parciales_in, // tamaño = gridSize de la fase1
+    int n,
+    MinData *d_result // 1 entrada final
+)
+{
+    extern __shared__ MinData sdata[];
+    int tidLocal  = threadIdx.x;
+    int tidGlobal = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Inicializamos en valores grandes
+    sdata[tidLocal].fitness = 1e30;
+    sdata[tidLocal].idx     = -1;
+
+    // Cargamos
+    if(tidGlobal < n){
+        sdata[tidLocal] = d_parciales_in[tidGlobal];
+    }
+    __syncthreads();
+
+    // Reducción en shared
+    for(int stride = blockDim.x/2; stride>0; stride >>= 1){
+        if(tidLocal < stride){
+            if(sdata[tidLocal + stride].fitness < sdata[tidLocal].fitness){
+                sdata[tidLocal].fitness = sdata[tidLocal + stride].fitness;
+                sdata[tidLocal].idx     = sdata[tidLocal + stride].idx;
+            }
+        }
+        __syncthreads();
+    }
+
+    // Hilo 0 escribe el resultado
+    if(tidLocal == 0){
+        d_result[0] = sdata[0];
+    }
+}
+
 // ----------------------------------------------------
 // Funciones device auxiliares
 // ----------------------------------------------------
 
-/// --------------------------------------------------------------------------
-/// cycle_crossover_device:
-///   Versión "device" de tu ciclo de cruce en CPU.
-///   Genera 1 hijo en el array "child" (size = num_ciudades)
-///   usando padre1 "p1" y padre2 "p2" (también arrays de size=num_ciudades).
-/// --------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------
-// cycle_crossover_device: Sin "new[]".
-// Usa "child[]" y "visitado[]" que fueron asignados en shared memory.
-// ---------------------------------------------------------------------
+// Función device para realizar el cruce de ciclos entre dos padres
+// Recibe:
+//   - const int *p1: Genotipo del primer padre
+//   - const int *p2: Genotipo del segundo padre
+//   - int *child: Genotipo del hijo a generar
+//   - int *visitado: Arreglo para rastrear ciudades visitadas
+//   - int num_ciudades: Número de ciudades en el genotipo
+// No devuelve nada, pero modifica el genotipo del hijo
 __device__ void cycle_crossover_device(const int *p1, const int *p2,
                                        int *child, int *visitado,
                                        int num_ciudades)
@@ -282,7 +441,7 @@ __device__ void cycle_crossover_device(const int *p1, const int *p2,
 
     // 2) Mientras queden posiciones sin visitar
     while (restantes > 0) {
-        // encontrar primera posición no visitada
+        // Encontrar primera posición no visitada
         int inicio = -1;
         for (int i = 0; i < num_ciudades; i++) {
             if (visitado[i] == 0) {
@@ -323,9 +482,17 @@ __device__ void cycle_crossover_device(const int *p1, const int *p2,
     }
 }
 
+// Función device para evaluar el fitness de un individuo en la GPU
+// Recibe:
+//   - int *ruta: Genotipo del individuo (ruta de ciudades)
+//   - double *distancias: Matriz de distancias entre ciudades
+//   - double *ventanas_de_tiempo: Matriz de ventanas de tiempo para cada ciudad
+//   - int num_ciudades: Número de ciudades en el genotipo
+// Devuelve:
+//   - double: Costo total del recorrido (fitness del individuo)
 __device__ double evaluar_individuo_gpu(int *ruta, double *distancias, double *ventanas_de_tiempo, int num_ciudades) {
-    double total_cost = 0.0;      // Costo total del recorrido (en horas)
-    double tiempo_acumulado = 0.0; // Tiempo transcurrido desde el inicio del recorrido
+    double total_cost = 0.0;          // Costo total del recorrido (en horas)
+    double tiempo_acumulado = 0.0;    // Tiempo transcurrido desde el inicio del recorrido
 
     // Iteramos sobre las ciudades en la ruta de forma circular
     for (int i = 0; i < num_ciudades; i++) {
@@ -364,6 +531,16 @@ __device__ double evaluar_individuo_gpu(int *ruta, double *distancias, double *v
     return total_cost;
 }
 
+// Función device para aplicar la heurística de eliminación de abruptos en la GPU
+// Recibe:
+//   - int *ruta: Ruta actual del individuo
+//   - int num_ciudades: Número de ciudades en la ruta
+//   - int m: Número de vecinos a considerar
+//   - double *distancias: Matriz de distancias entre ciudades
+//   - double *ventanas_de_tiempo: Matriz de ventanas de tiempo para cada ciudad
+//   - int *ruta_temp: Ruta temporal para modificaciones
+//   - DistanciaOrdenadaGPU *dist_ordenadas: Arreglo auxiliar para ordenar distancias
+// No devuelve nada, pero modifica la ruta para eliminar abruptos
 __device__ void heuristica_abruptos_gpu(int *ruta,
                                         int num_ciudades,
                                         int m,
@@ -455,10 +632,23 @@ __device__ void heuristica_abruptos_gpu(int *ruta,
 
 }
 
+// Función device para comparar dos distancias en la GPU
+// Recibe:
+//   - DistanciaOrdenadaGPU a: Primera distancia a comparar
+//   - DistanciaOrdenadaGPU b: Segunda distancia a comparar
+// Devuelve:
+//   - int: 1 si a < b, 0 en caso contrario
 __device__ int comparar_distancias_gpu(DistanciaOrdenadaGPU a, DistanciaOrdenadaGPU b) {
     return (a.distancia < b.distancia);
 }
 
+// Función device para insertar un elemento en una posición específica de un arreglo en la GPU
+// Recibe:
+//   - int* array: Arreglo donde se insertará el elemento
+//   - int longitud: Longitud del arreglo
+//   - int elemento: Elemento a insertar
+//   - int posicion: Posición donde se insertará el elemento
+// No devuelve nada, pero modifica el arreglo
 __device__ void insertar_en_posicion_gpu(int* array, int longitud, int elemento, int posicion) {
     for (int i = longitud-1; i > posicion; i--) {
         array[i] = array[i-1];
@@ -466,6 +656,12 @@ __device__ void insertar_en_posicion_gpu(int* array, int longitud, int elemento,
     array[posicion] = elemento;
 }
 
+// Función device para eliminar un elemento de una posición específica de un arreglo en la GPU
+// Recibe:
+//   - int* array: Arreglo del que se eliminará el elemento
+//   - int longitud: Longitud del arreglo
+//   - int posicion: Posición del elemento a eliminar
+// No devuelve nada, pero modifica el arreglo
 __device__ void eliminar_de_posicion_gpu(int* array, int longitud, int posicion) {
     int valor = array[posicion];
     for (int i = posicion; i < longitud-1; i++) {
@@ -477,75 +673,110 @@ __device__ void eliminar_de_posicion_gpu(int* array, int longitud, int posicion)
 // ----------------------------------------------------
 // Funciones para copiar poblaciones CPU <-> GPU
 // ----------------------------------------------------
+
+// Copia una población desde la CPU a la GPU
+// Recibe:
+//   - const poblacion *pobCPU: Puntero a la población en la CPU
+//   - individuo_gpu *pobGPU: Puntero a la población en la GPU
+//   - int *genotiposGPU: Puntero a los genotipos en la GPU
+//   - int tamPobl: Tamaño de la población
+//   - int longGen: Longitud del genotipo
+// No devuelve nada, pero transfiere los datos de la CPU a la GPU
 void copiarPoblacionCPUaGPU(const poblacion *pobCPU, 
                             individuo_gpu *pobGPU, 
                             int *genotiposGPU,
                             int tamPobl, 
                             int longGen)
 {
-    // Array temporal en CPU
+    // Array temporal en CPU para almacenar los individuos GPU
     individuo_gpu *temp = (individuo_gpu*)malloc(tamPobl * sizeof(individuo_gpu));
 
     for(int i = 0; i < tamPobl; i++) {
-        // Copiar genotipo
+        // Copiar genotipo desde la CPU a la GPU
         gpuErrchk(cudaMemcpy(genotiposGPU + i*longGen,
                              pobCPU->individuos[i].genotipo,
                              longGen*sizeof(int),
                              cudaMemcpyHostToDevice));
-        // Ajustamos puntero
+        // Ajustar el puntero del genotipo en la GPU
         temp[i].genotipo = genotiposGPU + i*longGen;
-        // Fitness
+        // Copiar el fitness del individuo
         temp[i].fitness = pobCPU->individuos[i].fitness;
     }
 
-    // Copiar a pobGPU
+    // Copiar toda la población GPU desde el array temporal
     gpuErrchk(cudaMemcpy(pobGPU,
                          temp,
                          tamPobl*sizeof(individuo_gpu),
                          cudaMemcpyHostToDevice));
 
+    // Liberar la memoria temporal
     free(temp);
 }
 
+// Copia una población desde la GPU a la CPU
+// Recibe:
+//   - poblacion *pobCPU: Puntero a la población en la CPU
+//   - const individuo_gpu *pobGPU: Puntero a la población en la GPU
+//   - const int *genotiposGPU: Puntero a los genotipos en la GPU
+//   - int tamPobl: Tamaño de la población
+//   - int longGen: Longitud del genotipo
+// No devuelve nada, pero transfiere los datos de la GPU a la CPU
 void copiarPoblacionGPUaCPU(poblacion *pobCPU, 
                             const individuo_gpu *pobGPU, 
                             const int *genotiposGPU,
                             int tamPobl, 
                             int longGen)
 {
+    // Array temporal en CPU para almacenar los individuos GPU
     individuo_gpu *temp = (individuo_gpu*)malloc(tamPobl * sizeof(individuo_gpu));
 
+    // Copiar la población GPU al array temporal en la CPU
     gpuErrchk(cudaMemcpy(temp,
                          pobGPU,
                          tamPobl*sizeof(individuo_gpu),
                          cudaMemcpyDeviceToHost));
 
     for(int i = 0; i < tamPobl; i++) {
+        // Copiar el genotipo desde la GPU a la CPU
         gpuErrchk(cudaMemcpy(pobCPU->individuos[i].genotipo,
                              genotiposGPU + i*longGen,
                              longGen*sizeof(int),
                              cudaMemcpyDeviceToHost));
+        // Copiar el fitness del individuo
         pobCPU->individuos[i].fitness = temp[i].fitness;
     }
+    // Liberar la memoria temporal
     free(temp);
 }
 
 // ----------------------------------------------------
 // Funciones para crear y manejar poblaciones en CPU
 // ----------------------------------------------------
+
+// Crea una población en la CPU
+// Recibe:
+//   - int tamano: Tamaño de la población
+//   - int longitud_genotipo: Longitud del genotipo de cada individuo
+// Devuelve:
+//   - poblacion*: Puntero a la población creada
 poblacion *crear_poblacion(int tamano, int longitud_genotipo) {
+    // Asigna memoria para la estructura de la población
     poblacion *Poblacion = (poblacion *)malloc(sizeof(poblacion));
     if(!Poblacion) {
         fprintf(stderr, "Error al asignar memoria para Poblacion\n");
         exit(EXIT_FAILURE);
     }
     Poblacion->tamano = tamano;
+
+    // Asigna memoria para los individuos de la población
     Poblacion->individuos = (individuo *)malloc(tamano * sizeof(individuo));
     if(!Poblacion->individuos) {
         fprintf(stderr, "Error al asignar memoria para individuos\n");
         free(Poblacion);
         exit(EXIT_FAILURE);
     }
+
+    // Asigna memoria para los genotipos de cada individuo
     for(int i=0; i<tamano; i++) {
         Poblacion->individuos[i].genotipo = (int*)malloc(longitud_genotipo*sizeof(int));
         if(!Poblacion->individuos[i].genotipo) {
@@ -561,13 +792,18 @@ poblacion *crear_poblacion(int tamano, int longitud_genotipo) {
     return Poblacion;
 }
 
+// Crea permutaciones aleatorias para cada individuo de la población
+// Recibe:
+//   - poblacion *poblacion: Puntero a la población en la CPU
+//   - int longitud_genotipo: Longitud del genotipo de cada individuo
+// No devuelve nada, pero inicializa los genotipos con permutaciones aleatorias
 void crear_permutaciones(poblacion *poblacion, int longitud_genotipo) {
     for(int i=0; i< poblacion->tamano; i++) {
-        // inicializa
+        // Inicializa el genotipo con valores ordenados
         for(int j=0; j<longitud_genotipo; j++) {
             poblacion->individuos[i].genotipo[j] = j;
         }
-        // fisher-yates
+        // Mezcla el genotipo utilizando el algoritmo de Fisher-Yates
         for(int j = longitud_genotipo-1; j>0; j--) {
             int k = rand()%(j+1);
             int tmp = poblacion->individuos[i].genotipo[j];
@@ -577,31 +813,10 @@ void crear_permutaciones(poblacion *poblacion, int longitud_genotipo) {
     }
 }
 
-void ordenar_poblacion(poblacion *poblacion) {
-    int n = poblacion->tamano;
-    if(n<=1) return;
-    int profundidad_max = 2 * log2_suelo(n);
-    introsort_util(poblacion->individuos, &profundidad_max, 0, n);
-}
-
-void actualizar_poblacion(poblacion **destino, poblacion *origen, int longitud_genotipo) {
-    poblacion *nueva = crear_poblacion(origen->tamano, longitud_genotipo);
-    for(int i=0; i<origen->tamano; i++) {
-        for(int j=0; j<longitud_genotipo; j++) {
-            nueva->individuos[i].genotipo[j] = origen->individuos[i].genotipo[j];
-        }
-        nueva->individuos[i].fitness = origen->individuos[i].fitness;
-    }
-    if(*destino!=NULL) {
-        for(int i=0; i<(*destino)->tamano; i++) {
-            free((*destino)->individuos[i].genotipo);
-        }
-        free((*destino)->individuos);
-        free(*destino);
-    }
-    *destino = nueva;
-}
-
+// Libera la memoria asignada a una población en la CPU
+// Recibe:
+//   - poblacion *pob: Puntero a la población en la CPU
+// No devuelve nada, pero libera toda la memoria asociada a la población
 void liberar_poblacion(poblacion *pob) {
     if(!pob) return;
     if(pob->individuos) {
@@ -611,104 +826,4 @@ void liberar_poblacion(poblacion *pob) {
         free(pob->individuos);
     }
     free(pob);
-}
-
-// ----------------------------------------------------
-// Funciones de ordenamiento (introsort, etc.)
-// ----------------------------------------------------
-int log2_suelo(int n) {
-    int log = 0;
-    while(n>1) {
-        n >>= 1;
-        log++;
-    }
-    return log;
-}
-
-void introsort_util(individuo *arr, int *profundidad_max, int inicio, int fin) {
-    int tamano = fin - inicio;
-    if(tamano<16) {
-        insertion_sort(arr, inicio, fin-1);
-        return;
-    }
-    if(*profundidad_max == 0) {
-        heapsort(arr+inicio, tamano);
-        return;
-    }
-    (*profundidad_max)--;
-    int piv = particion(arr, inicio, fin-1);
-    introsort_util(arr, profundidad_max, inicio,   piv);
-    introsort_util(arr, profundidad_max, piv+1,    fin);
-}
-
-int particion(individuo *arr, int bajo, int alto) {
-    int medio = bajo + (alto-bajo)/2;
-    int indice_pivote = mediana_de_tres(arr, bajo, medio, alto);
-    intercambiar_individuos(&arr[indice_pivote], &arr[alto]);
-
-    individuo pivote = arr[alto];
-    int i = bajo-1;
-    for(int j=bajo; j<alto; j++) {
-        if(arr[j].fitness <= pivote.fitness) {
-            i++;
-            intercambiar_individuos(&arr[i], &arr[j]);
-        }
-    }
-    intercambiar_individuos(&arr[i+1], &arr[alto]);
-    return i+1;
-}
-
-int mediana_de_tres(individuo *arr, int a, int b, int c) {
-    if(arr[a].fitness <= arr[b].fitness) {
-        if(arr[b].fitness <= arr[c].fitness) return b;
-        else if(arr[a].fitness <= arr[c].fitness) return c;
-        else return a;
-    } else {
-        if(arr[a].fitness <= arr[c].fitness) return a;
-        else if(arr[b].fitness <= arr[c].fitness) return c;
-        else return b;
-    }
-}
-
-void intercambiar_individuos(individuo *a, individuo *b) {
-    individuo temp = *a;
-    *a = *b;
-    *b = temp;
-}
-
-void insertion_sort(individuo *arr, int izquierda, int derecha) {
-    for(int i=izquierda+1; i<=derecha; i++) {
-        individuo clave = arr[i];
-        int j = i-1;
-        while(j>=izquierda && arr[j].fitness > clave.fitness) {
-            arr[j+1] = arr[j];
-            j--;
-        }
-        arr[j+1] = clave;
-    }
-}
-
-void heapsort(individuo *arr, int n) {
-    for(int i = n/2 -1; i>=0; i--)
-        heapify(arr, n, i);
-    for(int i=n-1; i>0; i--) {
-        intercambiar_individuos(&arr[0], &arr[i]);
-        heapify(arr, i, 0);
-    }
-}
-
-void heapify(individuo *arr, int n, int i) {
-    int mayor = i;
-    int izquierda = 2*i + 1;
-    int derecha   = 2*i + 2;
-    if(izquierda<n && arr[izquierda].fitness > arr[mayor].fitness) {
-        mayor = izquierda;
-    }
-    if(derecha<n && arr[derecha].fitness > arr[mayor].fitness) {
-        mayor = derecha;
-    }
-    if(mayor!=i) {
-        intercambiar_individuos(&arr[i], &arr[mayor]);
-        heapify(arr, n, mayor);
-    }
 }
