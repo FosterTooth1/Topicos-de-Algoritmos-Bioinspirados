@@ -9,6 +9,8 @@
 #include <device_launch_parameters.h>
 #include <curand_kernel.h>
 #include <curand.h>
+#include <math.h>
+
 
 // ----------------------------------------------------
 // Estructuras para CPU
@@ -50,11 +52,17 @@ typedef struct {
 // Estructura auxiliar para ordenar distancias en GPU
 // ----------------------------------------------------
 
-// Estructura para almacenar una distancia y su índice correspondiente en la GPU
+// Estructura para almacenar una distancia y su índice correspondiente en la GPU (Heuristica de Abruptos)
 typedef struct {
     double distancia; // Valor de la distancia
     int indice;       // Índice asociado a la distancia
 } DistanciaOrdenadaGPU;
+
+// Para la reducción del mínimo (fitness, idx)
+struct MinData {
+    double fitness;
+    int    idx;
+};
 
 // ----------------------------------------------------
 // Macros / funciones inline para manejo de errores CUDA
@@ -96,6 +104,29 @@ __global__ void mutar_individuos_kernel(individuo_gpu *individuos, double *dista
                                         double prob_mutacion, int tamano_poblacion,
                                         int longitud_genotipo, curandState *states);
 
+// Kernel para actualizar a los hijos como la nueva poblacion
+__global__ void actualizar_poblacion_kernel(individuo_gpu *destino,
+                                            individuo_gpu *origen,
+                                            int tamano_poblacion,
+                                            int longitud_genotipo);
+
+// Función auxiliar para obtener el mejor individuo (índice + fitness) en GPU
+// Sus funciones auxiliares son reduce_find_minphase1 y phase2
+void buscarMejorIndividuoEnGPU(individuo_gpu *d_poblacion,
+                               int tamano_poblacion,
+                               int blockSize,
+                               MinData *d_result);
+
+// Kernel para encontrar los valores minimos de un bloque y su indice
+__global__ void reduce_find_min_phase1(const individuo_gpu *d_poblacion,
+                                       int tamano_poblacion,
+                                       MinData *d_parciales);
+
+// Kernel para encontrar los valores minimos de un conjunto de bloques y su indice
+__global__ void reduce_find_min_phase2(const MinData *d_parciales_in,
+                                       int n,
+                                       MinData *d_result);
+
 // ----------------------------------------------------
 // Funciones device/host auxiliares
 // ----------------------------------------------------
@@ -128,42 +159,8 @@ poblacion *crear_poblacion(int tamano, int longitud_genotipo);
 // Función para generar permutaciones aleatorias para cada individuo en la población
 void crear_permutaciones(poblacion *poblacion, int longitud_genotipo);
 
-// Función para ordenar la población en la CPU basada en el fitness
-void ordenar_poblacion(poblacion *poblacion);
-
-// Función para actualizar la población destino con la población origen
-void actualizar_poblacion(poblacion **destino, poblacion *origen, int longitud_genotipo);
-
 // Función para liberar la memoria asignada a una población en la CPU
 void liberar_poblacion(poblacion *poblacion);
-
-// ----------------------------------------------------
-// Prototipos de funciones para ordenamiento en CPU
-// ----------------------------------------------------
-
-// Función auxiliar para Introsort en la CPU
-void introsort_util(individuo *arr, int *profundidad_max, int inicio, int fin);
-
-// Función para calcular el logaritmo base 2 de un número entero
-int log2_suelo(int n);
-
-// Función para particionar el arreglo en QuickSort
-int particion(individuo *arr, int bajo, int alto);
-
-// Función para encontrar la mediana de tres elementos en QuickSort
-int mediana_de_tres(individuo *arr, int a, int b, int c);
-
-// Función para intercambiar dos individuos en el arreglo
-void intercambiar_individuos(individuo *a, individuo *b);
-
-// Función de Insertion Sort para ordenar pequeños subarreglos
-void insertion_sort(individuo *arr, int izquierda, int derecha);
-
-// Función de Heapsort para ordenar la población
-void heapsort(individuo *arr, int n);
-
-// Función auxiliar para Heapsort que mantiene la propiedad del heap
-void heapify(individuo *arr, int n, int i);
 
 // ----------------------------------------------------
 // Prototipos de funciones auxiliares para copiar

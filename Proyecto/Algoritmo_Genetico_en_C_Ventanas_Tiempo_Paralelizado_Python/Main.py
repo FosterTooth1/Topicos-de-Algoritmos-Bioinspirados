@@ -104,7 +104,7 @@ def main():
     ag = AlgoritmoGeneticoParalelizado(ruta_biblioteca)
     
     # Definir los parámetros para el algoritmo genético
-    tamano_poblacion = 10000
+    tamano_poblacion = 100000
     longitud_genotipo = 32
     num_generaciones = 100
     num_competidores = 2

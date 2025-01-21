@@ -1,5 +1,4 @@
 #include "Biblioteca_cuda.h"
-#include <math.h> // para log2, etc.
 
 // ----------------------------------------------------
 // Implementación de la macro para manejo de errores
@@ -180,10 +179,6 @@ __global__ void cruzar_individuos_kernel(individuo_gpu *padres, individuo_gpu *h
             longitud_genotipo
         );
 
-        // 2) Generar hijo2 con cycle_crossover_device(padre2, padre1)
-        //    *Pero* hay que "reiniciar" "visitado" antes de reusar. Lo más fácil:
-        //    reusar la misma "visitado[]" si deseas, o usar un trozo distinto.
-        //    Aquí, por simplicidad, volvemos a poner en 0:
         for (int i = 0; i < longitud_genotipo; i++) {
             visitado[i] = 0;
         }
@@ -195,7 +190,7 @@ __global__ void cruzar_individuos_kernel(individuo_gpu *padres, individuo_gpu *h
             longitud_genotipo
         );
 
-        // (Opcional) Llamar heurística:
+        // Llamar heurística:
         heuristica_abruptos_gpu(hijo1, longitud_genotipo, m, distancias, ventanas_de_tiempo, ruta_temp, dist_ordenadas);
         heuristica_abruptos_gpu(hijo2, longitud_genotipo, m, distancias, ventanas_de_tiempo, ruta_temp, dist_ordenadas);
 
@@ -275,6 +270,147 @@ __global__ void mutar_individuos_kernel(individuo_gpu *individuos, double *dista
         total_cost += distancias[individuos[idx].genotipo[longitud_genotipo - 1] * 
                                  longitud_genotipo + individuos[idx].genotipo[0]];
         individuos[idx].fitness = total_cost;
+    }
+}
+
+// Actualiza la población destino con la población origen
+// Recibe:
+//   - individuo_gpu *destino: Doble puntero a la población destino en la GPU
+//   - individuo_gpu *origen: Puntero a la población origen en la GPU
+//   - int longitud_genotipo: Longitud del genotipo de cada individuo
+// No devuelve nada, pero reemplaza la población destino con la población origen
+__global__ void actualizar_poblacion_kernel(individuo_gpu *destino,
+                                            individuo_gpu *origen,
+                                            int tamano_poblacion,
+                                            int longitud_genotipo)
+{
+    // Identificador global del hilo
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Copiamos solo si idx está dentro del rango
+    if (idx < tamano_poblacion) {
+        // Copiamos todos los genes
+        for(int j = 0; j < longitud_genotipo; j++) {
+            destino[idx].genotipo[j] = origen[idx].genotipo[j];
+        }
+        // Copiamos el fitness
+        destino[idx].fitness = origen[idx].fitness;
+    }
+}
+
+// Función auxiliar para obtener el mejor individuo (índice + fitness) en GPU
+// Recibe punteros a los individuos en la poblacion, el tamaño de la poblacion, el tamaño del bloque de memoria
+// y un puntero con los indices y el genotipo del mejor individuo en GPU
+// No devuelve nada, todo se hace por referencia
+void buscarMejorIndividuoEnGPU(individuo_gpu *d_poblacion,
+                               int tamano_poblacion,
+                               int blockSize,
+                               MinData *d_result)
+{
+    // 1) Fase 1: reduce en muchos bloques
+    int gridSize = (tamano_poblacion + blockSize - 1)/blockSize;
+    size_t sharedMemSize = blockSize * sizeof(MinData);
+
+    // Reservamos array d_parciales (gridSize entradas)
+    MinData *d_parciales = nullptr;
+    cudaMalloc(&d_parciales, gridSize*sizeof(MinData));
+
+    reduce_find_min_phase1<<<gridSize, blockSize, sharedMemSize>>>(
+        d_poblacion,
+        tamano_poblacion,
+        d_parciales
+    );
+    cudaDeviceSynchronize();
+
+    // 2) Fase 2: reduce de los parciales (gridSize) a un solo resultado
+    //            Podemos lanzar 1 bloque con blockSize >= gridSize
+    int blockSize2 = 256;
+    size_t sharedMemSize2 = blockSize2*sizeof(MinData);
+
+    reduce_find_min_phase2<<<1, blockSize2, sharedMemSize2>>>(
+        d_parciales,
+        gridSize,
+        d_result
+    );
+    cudaDeviceSynchronize();
+
+    cudaFree(d_parciales);
+}
+
+// Implementación de los kernels de reduce (búsqueda del mínimo)
+__global__ void reduce_find_min_phase1(
+    const individuo_gpu *d_poblacion,
+    int tamano_poblacion,
+    MinData *d_parciales // una entrada por bloque
+)
+{
+    extern __shared__ MinData sdata[]; // Memoria compartida dinámica
+
+    int tidGlobal = blockIdx.x * blockDim.x + threadIdx.x;
+    int tidLocal  = threadIdx.x;
+
+    // Inicializamos con "valores grandes"
+    sdata[tidLocal].fitness = 1e30;
+    sdata[tidLocal].idx     = -1;
+
+    // Cargamos desde memoria global
+    if(tidGlobal < tamano_poblacion){
+        sdata[tidLocal].fitness = d_poblacion[tidGlobal].fitness;
+        sdata[tidLocal].idx     = tidGlobal;
+    }
+    __syncthreads();
+
+    // Reducción (min) en la memoria compartida
+    for(int stride = blockDim.x/2; stride>0; stride >>= 1){
+        if(tidLocal < stride){
+            if(sdata[tidLocal + stride].fitness < sdata[tidLocal].fitness){
+                sdata[tidLocal].fitness = sdata[tidLocal + stride].fitness;
+                sdata[tidLocal].idx     = sdata[tidLocal + stride].idx;
+            }
+        }
+        __syncthreads();
+    }
+
+    // El hilo 0 del bloque escribe su resultado parcial
+    if(tidLocal == 0){
+        d_parciales[blockIdx.x] = sdata[0];
+    }
+}
+
+__global__ void reduce_find_min_phase2(
+    const MinData *d_parciales_in, // tamaño = gridSize de la fase1
+    int n,
+    MinData *d_result // 1 entrada final
+)
+{
+    extern __shared__ MinData sdata[];
+    int tidLocal  = threadIdx.x;
+    int tidGlobal = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // Inicializamos en valores grandes
+    sdata[tidLocal].fitness = 1e30;
+    sdata[tidLocal].idx     = -1;
+
+    // Cargamos
+    if(tidGlobal < n){
+        sdata[tidLocal] = d_parciales_in[tidGlobal];
+    }
+    __syncthreads();
+
+    // Reducción en shared
+    for(int stride = blockDim.x/2; stride>0; stride >>= 1){
+        if(tidLocal < stride){
+            if(sdata[tidLocal + stride].fitness < sdata[tidLocal].fitness){
+                sdata[tidLocal].fitness = sdata[tidLocal + stride].fitness;
+                sdata[tidLocal].idx     = sdata[tidLocal + stride].idx;
+            }
+        }
+        __syncthreads();
+    }
+
+    // Hilo 0 escribe el resultado
+    if(tidLocal == 0){
+        d_result[0] = sdata[0];
     }
 }
 
@@ -677,44 +813,6 @@ void crear_permutaciones(poblacion *poblacion, int longitud_genotipo) {
     }
 }
 
-// Ordena la población en la CPU basada en el fitness de los individuos
-// Recibe:
-//   - poblacion *poblacion: Puntero a la población en la CPU
-// No devuelve nada, pero ordena los individuos de la población por fitness
-void ordenar_poblacion(poblacion *poblacion) {
-    int n = poblacion->tamano;
-    if(n <= 1) return;
-    int profundidad_max = 2 * log2_suelo(n);
-    introsort_util(poblacion->individuos, &profundidad_max, 0, n);
-}
-
-// Actualiza la población destino con la población origen
-// Recibe:
-//   - poblacion **destino: Doble puntero a la población destino en la CPU
-//   - poblacion *origen: Puntero a la población origen en la CPU
-//   - int longitud_genotipo: Longitud del genotipo de cada individuo
-// No devuelve nada, pero reemplaza la población destino con la población origen
-void actualizar_poblacion(poblacion **destino, poblacion *origen, int longitud_genotipo) {
-    // Crea una nueva población con los mismos parámetros que la población origen
-    poblacion *nueva = crear_poblacion(origen->tamano, longitud_genotipo);
-    for(int i=0; i<origen->tamano; i++) {
-        for(int j=0; j<longitud_genotipo; j++) {
-            nueva->individuos[i].genotipo[j] = origen->individuos[i].genotipo[j];
-        }
-        nueva->individuos[i].fitness = origen->individuos[i].fitness;
-    }
-    // Libera la memoria de la población destino anterior si existe
-    if(*destino != NULL) {
-        for(int i=0; i<(*destino)->tamano; i++) {
-            free((*destino)->individuos[i].genotipo);
-        }
-        free((*destino)->individuos);
-        free(*destino);
-    }
-    // Asigna la nueva población al destino
-    *destino = nueva;
-}
-
 // Libera la memoria asignada a una población en la CPU
 // Recibe:
 //   - poblacion *pob: Puntero a la población en la CPU
@@ -729,162 +827,3 @@ void liberar_poblacion(poblacion *pob) {
     }
     free(pob);
 }
-
-// ----------------------------------------------------
-// Funciones de ordenamiento (introsort, etc.)
-// ----------------------------------------------------
-
-// Calcula el logaritmo base 2 de un número entero, redondeando hacia abajo
-// Recibe:
-//   - int n: Número al cual se le calculará el logaritmo base 2
-// Devuelve:
-//   - int: Resultado del logaritmo base 2 redondeado hacia abajo
-int log2_suelo(int n) {
-    int log = 0;
-    while(n > 1) {
-        n >>= 1;
-        log++;
-    }
-    return log;
-}
-
-// Utilidad para el algoritmo Introsort
-// Recibe:
-//   - individuo *arr: Arreglo de individuos a ordenar
-//   - int *profundidad_max: Puntero a la profundidad máxima permitida
-//   - int inicio: Índice inicial del subarreglo
-//   - int fin: Índice final del subarreglo
-// No devuelve nada, pero ordena el subarreglo en su lugar
-void introsort_util(individuo *arr, int *profundidad_max, int inicio, int fin) {
-    int tamano = fin - inicio;
-    if(tamano < 16) {
-        insertion_sort(arr, inicio, fin-1);
-        return;
-    }
-    if(*profundidad_max == 0) {
-        heapsort(arr + inicio, tamano);
-        return;
-    }
-    (*profundidad_max)--;
-    int piv = particion(arr, inicio, fin-1);
-    introsort_util(arr, profundidad_max, inicio,   piv);
-    introsort_util(arr, profundidad_max, piv+1,    fin);
-}
-
-// Particiona el arreglo para el QuickSort dentro de Introsort
-// Recibe:
-//   - individuo *arr: Arreglo de individuos
-//   - int bajo: Índice inferior para la partición
-//   - int alto: Índice superior para la partición
-// Devuelve:
-//   - int: Índice del pivote después de la partición
-int particion(individuo *arr, int bajo, int alto) {
-    // Calcula la mediana de tres para seleccionar el pivote
-    int medio = bajo + (alto - bajo) / 2;
-    int indice_pivote = mediana_de_tres(arr, bajo, medio, alto);
-    intercambiar_individuos(&arr[indice_pivote], &arr[alto]);
-
-    individuo pivote = arr[alto];
-    int i = bajo - 1;
-    for(int j = bajo; j < alto; j++) {
-        if(arr[j].fitness <= pivote.fitness) {
-            i++;
-            intercambiar_individuos(&arr[i], &arr[j]);
-        }
-    }
-    intercambiar_individuos(&arr[i+1], &arr[alto]);
-    return i+1;
-}
-
-// Encuentra la mediana de tres elementos para seleccionar el pivote en QuickSort
-// Recibe:
-//   - individuo *arr: Arreglo de individuos
-//   - int a: Índice del primer elemento
-//   - int b: Índice del segundo elemento
-//   - int c: Índice del tercer elemento
-// Devuelve:
-//   - int: Índice del elemento que es la mediana
-int mediana_de_tres(individuo *arr, int a, int b, int c) {
-    if(arr[a].fitness <= arr[b].fitness) {
-        if(arr[b].fitness <= arr[c].fitness) return b;
-        else if(arr[a].fitness <= arr[c].fitness) return c;
-        else return a;
-    } else {
-        if(arr[a].fitness <= arr[c].fitness) return a;
-        else if(arr[b].fitness <= arr[c].fitness) return c;
-        else return b;
-    }
-}
-
-// Intercambia dos individuos en el arreglo
-// Recibe:
-//   - individuo *a: Puntero al primer individuo
-//   - individuo *b: Puntero al segundo individuo
-// No devuelve nada, pero intercambia los valores de los individuos
-void intercambiar_individuos(individuo *a, individuo *b) {
-    individuo temp = *a;
-    *a = *b;
-    *b = temp;
-}
-
-// Ordena un subarreglo usando Insertion Sort
-// Recibe:
-//   - individuo *arr: Arreglo de individuos
-//   - int izquierda: Índice izquierdo del subarreglo
-//   - int derecha: Índice derecho del subarreglo
-// No devuelve nada, pero ordena el subarreglo en su lugar
-void insertion_sort(individuo *arr, int izquierda, int derecha) {
-    for(int i = izquierda + 1; i <= derecha; i++) {
-        individuo clave = arr[i];
-        int j = i - 1;
-        while(j >= izquierda && arr[j].fitness > clave.fitness) {
-            arr[j + 1] = arr[j];
-            j--;
-        }
-        arr[j + 1] = clave;
-    }
-}
-
-// Ordena un arreglo de individuos usando Heapsort
-// Recibe:
-//   - individuo *arr: Arreglo de individuos
-//   - int n: Tamaño del arreglo
-// No devuelve nada, pero ordena el arreglo en su lugar
-void heapsort(individuo *arr, int n) {
-    // Construye el heap
-    for(int i = n/2 - 1; i >= 0; i--)
-        heapify(arr, n, i);
-    // Extrae los elementos del heap uno por uno
-    for(int i = n-1; i > 0; i--) {
-        intercambiar_individuos(&arr[0], &arr[i]);
-        // Llama a heapify en el heap reducido
-        heapify(arr, i, 0);
-    }
-}
-
-// Mantiene la propiedad del heap en Heapsort
-// Recibe:
-//   - individuo *arr: Arreglo de individuos
-//   - int n: Tamaño del heap
-//   - int i: Índice del nodo raíz
-// No devuelve nada, pero ajusta el heap en el arreglo
-void heapify(individuo *arr, int n, int i) {
-    int mayor = i;                    // Inicializa el mayor como raíz
-    int izquierda = 2*i + 1;         // Índice del hijo izquierdo
-    int derecha   = 2*i + 2;         // Índice del hijo derecho
-
-    // Si el hijo izquierdo tiene un fitness mayor que el actual mayor
-    if(izquierda < n && arr[izquierda].fitness > arr[mayor].fitness) {
-        mayor = izquierda;
-    }
-    // Si el hijo derecho tiene un fitness mayor que el actual mayor
-    if(derecha < n && arr[derecha].fitness > arr[mayor].fitness) {
-        mayor = derecha;
-    }
-    // Si el mayor no es la raíz
-    if(mayor != i) {
-        intercambiar_individuos(&arr[i], &arr[mayor]);
-        // Recursivamente ajusta el heap afectado
-        heapify(arr, n, mayor);
-    }
-

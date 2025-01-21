@@ -1,5 +1,4 @@
 #include "Biblioteca_cuda.h"
-#include <math.h>  // para log2 etc.
 
 int main(int argc, char** argv) {
     // Iniciamos la medición del tiempo
@@ -7,7 +6,7 @@ int main(int argc, char** argv) {
 
     // Definimos los parámetros del algoritmo genético
     srand(time(NULL));
-    int tamano_poblacion = 100;
+    int tamano_poblacion = 100000;
     int longitud_genotipo = 32;
     int num_generaciones  = 100;
     int num_competidores  = 2;
@@ -156,6 +155,7 @@ int main(int argc, char** argv) {
     }
     
     // Definimos blockSize_1 y gridSize_1
+    // Estos tamaños los usamos para el kernel de Cruzamiento
     int blockSize_1 = 32;
     int gridSize_1  = ( (tamano_poblacion / 2) + blockSize_1 - 1 ) / blockSize_1;
 
@@ -179,24 +179,34 @@ int main(int argc, char** argv) {
     cudaDeviceSynchronize();
     gpuErrchk(cudaGetLastError());
 
-    // Bajamos los resultados y ordenamos la población
-    copiarPoblacionGPUaCPU(Poblacion, d_poblacion, d_genotipos_poblacion,
-                           tamano_poblacion, longitud_genotipo);
-    ordenar_poblacion(Poblacion);
+    // Hallamos el mejor individuo con reduce en GPU
+    MinData *d_result;
+    cudaMalloc(&d_result, sizeof(MinData));
+    buscarMejorIndividuoEnGPU(d_poblacion, tamano_poblacion, blockSize, d_result);
 
-    // Identificamos el mejor individuo
+    // Copiamos el mejor (fitness, idx)
+    MinData host_min_data;
+    cudaMemcpy(&host_min_data, d_result, sizeof(MinData), cudaMemcpyDeviceToHost);
+
+    int *tempGenotipo = (int*)malloc(longitud_genotipo * sizeof(int));
+    if (!tempGenotipo) {
+        fprintf(stderr, "Error al asignar memoria para tempGenotipo.\n");
+        exit(1);
+    }
+
+    // Copiar el genotipo del mejor individuo
     individuo *Mejor_Individuo = (individuo*)malloc(sizeof(individuo));
-    Mejor_Individuo->genotipo = (int*)malloc(longitud_genotipo * sizeof(int));
-    memcpy(Mejor_Individuo->genotipo, 
-           Poblacion->individuos[0].genotipo, 
-           longitud_genotipo * sizeof(int));
-    Mejor_Individuo->fitness = Poblacion->individuos[0].fitness;
+    Mejor_Individuo->genotipo = (int*)malloc(longitud_genotipo*sizeof(int));
+    Mejor_Individuo->fitness  = host_min_data.fitness;
+
+    int bestIdx = host_min_data.idx;
+    cudaMemcpy(Mejor_Individuo->genotipo,
+               d_genotipos_poblacion + bestIdx*longitud_genotipo,
+               longitud_genotipo*sizeof(int),
+               cudaMemcpyDeviceToHost);
 
     // Ejecutamos el bucle principal
     for(int gen = 0; gen < num_generaciones; gen++) {
-        // Subimos la Población (CPU->GPU) para la selección
-        copiarPoblacionCPUaGPU(Poblacion, d_poblacion, d_genotipos_poblacion,
-                               tamano_poblacion, longitud_genotipo);
 
         // Seleccionamos los padres
         seleccionar_padres_kernel<<<gridSize, blockSize>>>(d_poblacion, d_padres,
@@ -217,9 +227,6 @@ int main(int argc, char** argv) {
         cudaDeviceSynchronize();
         gpuErrchk(cudaGetLastError());
 
-        // Reconfiguramos CUDA si es necesario
-        obtenerConfiguracionCUDA(&blockSize, &minGridSize, &gridSize, tamano_poblacion);
-
         // Aplicamos la mutación
         mutar_individuos_kernel<<<gridSize, blockSize>>>(d_hijos, d_distancias, d_ventanas_tiempo,
                                                          prob_mutacion,
@@ -229,33 +236,38 @@ int main(int argc, char** argv) {
         cudaDeviceSynchronize();
         gpuErrchk(cudaGetLastError());
 
-        // Bajamos los hijos a la CPU
-        copiarPoblacionGPUaCPU(hijos, d_hijos, d_genotipos_hijos,
-                               tamano_poblacion, longitud_genotipo);
+        // Reconfiguramos CUDA si es necesario
+        obtenerConfiguracionCUDA(&blockSize, &minGridSize, &gridSize, tamano_poblacion);
 
-        // Actualizamos la Población en la CPU
-        actualizar_poblacion(&Poblacion, hijos, longitud_genotipo);
+        // Actualizamos poblacion de padres a hijos
+        actualizar_poblacion_kernel<<<gridSize, blockSize>>>(d_poblacion, d_hijos,
+                                                            tamano_poblacion, longitud_genotipo);
+        cudaDeviceSynchronize();
+        gpuErrchk(cudaGetLastError());
 
-        // Evaluamos la nueva Población con el kernel
-        copiarPoblacionCPUaGPU(Poblacion, d_poblacion, d_genotipos_poblacion,
-                               tamano_poblacion, longitud_genotipo);
-
+        // Evaluamos la poblacion
         evaluar_poblacion_kernel<<<gridSize, blockSize>>>(d_poblacion, d_distancias, d_ventanas_tiempo,
                                                           tamano_poblacion, longitud_genotipo);
         cudaDeviceSynchronize();
         gpuErrchk(cudaGetLastError());
 
-        // Bajamos los resultados y ordenamos la población
-        copiarPoblacionGPUaCPU(Poblacion, d_poblacion, d_genotipos_poblacion,
-                               tamano_poblacion, longitud_genotipo);
-        ordenar_poblacion(Poblacion);
+        // Hallamos el mejor individuo en GPU (reduce)
+        buscarMejorIndividuoEnGPU(d_poblacion, tamano_poblacion, blockSize, d_result);
+        cudaMemcpy(&host_min_data, d_result, sizeof(MinData), cudaMemcpyDeviceToHost);
 
-        // Actualizamos el mejor individuo si es necesario
-        if(Poblacion->individuos[0].fitness < Mejor_Individuo->fitness) {
-            memcpy(Mejor_Individuo->genotipo,
-                   Poblacion->individuos[0].genotipo,
-                   longitud_genotipo * sizeof(int));
-            Mejor_Individuo->fitness = Poblacion->individuos[0].fitness;
+        // Copiamos el genotipo del mejor individuo (host_min_data.idx)
+        cudaMemcpy(
+            tempGenotipo,
+            d_genotipos_poblacion + host_min_data.idx * longitud_genotipo,
+            longitud_genotipo * sizeof(int),
+            cudaMemcpyDeviceToHost
+        );
+
+        // Actualizamos el Mejor_Individuo global si es necesario (para guardar el mejor histórico):
+        if (host_min_data.fitness < Mejor_Individuo->fitness) {
+            Mejor_Individuo->fitness = host_min_data.fitness;
+            memcpy(Mejor_Individuo->genotipo, tempGenotipo, 
+                longitud_genotipo * sizeof(int));
         }
     }
 
@@ -280,6 +292,7 @@ int main(int argc, char** argv) {
 
     free(Mejor_Individuo->genotipo);
     free(Mejor_Individuo);
+    free(tempGenotipo);
 
     // Liberamos la memoria en la GPU
     gpuErrchk(cudaFree(d_distancias));
